@@ -1,0 +1,456 @@
+<title>PokAgent</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Pixelify+Sans:wght@400;600&family=Silkscreen&display=swap">
+<style>
+/* Layout: faux bureau 16:10 en tête (widget en haut à gauche, popup au premier plan), commandes dessous, notes techniques en grille. */
+:root {
+  --bg: #12141c;
+  --panel: #1b1e2a;
+  --line: #2b2f40;
+  --fg: #ebe8df;
+  --muted: #9b99a6;
+  --accent: #d97757;
+  --run: #58a8f8;
+  --done: #f0c040;
+  --fail: #e04848;
+  --font-pixel: "Pixelify Sans", "Courier New", monospace;
+  --font-body: "Inter", system-ui, sans-serif;
+  color-scheme: dark;
+}
+html, body { background: var(--bg); color: var(--fg); }
+body { font-family: var(--font-body); font-size: 15px; line-height: 1.55; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 28px 56px; }
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 20px; }
+header { display: grid; gap: 4px; }
+.eyebrow { font-family: var(--font-pixel); color: var(--accent); letter-spacing: .08em; text-transform: uppercase; font-size: 13px; }
+h1 { font-family: var(--font-pixel); font-weight: 600; font-size: clamp(26px, 4vw, 38px); line-height: 1.1; margin: 0; text-wrap: balance; }
+header p { margin: 0; color: var(--muted); max-width: 70ch; }
+
+/* faux bureau */
+.desk { position: relative; aspect-ratio: 16 / 10; min-height: 420px; max-width: 100%; border-radius: 10px; overflow: hidden; border: 1px solid var(--line);
+  background: radial-gradient(120% 90% at 70% 110%, #2a3358 0%, #161a2c 55%, #0e1020 100%); }
+.desk::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background-image: radial-gradient(1px 1px at 20% 30%, #fff8 50%, transparent 51%), radial-gradient(1px 1px at 80% 18%, #fff6 50%, transparent 51%), radial-gradient(1px 1px at 62% 42%, #fff5 50%, transparent 51%), radial-gradient(1px 1px at 35% 70%, #fff4 50%, transparent 51%); }
+.widget { position: absolute; top: 12px; left: 12px; z-index: 1; line-height: 0; }
+.widget canvas { image-rendering: pixelated; display: block; max-width: calc(100vw - 64px); }
+.win { position: absolute; z-index: 2; right: 4%; top: 30%; width: 50%; height: 52%; background: #0d0f15; border: 1px solid #343a50; border-radius: 8px; box-shadow: 0 20px 50px #0009; overflow: hidden; display: flex; flex-direction: column; }
+.win .bar { height: 26px; background: #1d2130; display: flex; align-items: center; gap: 6px; padding: 0 10px; font-size: 12px; color: var(--muted); }
+.win .bar i { width: 9px; height: 9px; border-radius: 50%; background: #3a4058; display: inline-block; }
+.win pre { margin: 0; padding: 10px 12px; font: 12px/1.6 ui-monospace, Consolas, monospace; color: #b9c0d4; white-space: pre-wrap; overflow: hidden; }
+.win pre b { color: var(--accent); font-weight: 600; }
+.taskbar { position: absolute; z-index: 3; left: 0; right: 0; bottom: 0; height: 30px; background: #0b0c12e6; border-top: 1px solid #2a2e40; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.taskbar span { width: 18px; height: 18px; border-radius: 4px; background: #2c3248; }
+.taskbar span:first-child { background: #3d6fd6; }
+
+/* popup "premier plan" */
+.popup { position: absolute; z-index: 5; right: 16px; bottom: 44px; width: min(420px, calc(100% - 32px)); display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: end;
+  animation: slide .45s steps(5) both; }
+@keyframes slide { from { transform: translateY(120%); } to { transform: none; } }
+.popup canvas { width: 60px; height: 84px; image-rendering: pixelated; filter: drop-shadow(0 4px 0 #0006); }
+.dlg { position: relative; background: #f8f8f8; color: #303038; font-family: var(--font-pixel); font-size: 17px; line-height: 1.35; padding: 12px 16px 14px; border-radius: 8px;
+  border: 3px solid #68a8a0; box-shadow: 0 0 0 3px #f8f8f8, 0 0 0 6px #48607a, 0 10px 30px #000a; min-width: 0; }
+.dlg strong { color: #c03838; font-weight: 600; }
+.dlg .arrow { position: absolute; right: 10px; bottom: 4px; color: #e05050; font-size: 12px; animation: blink .8s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.dlg .acts { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.dlg button { font: inherit; font-size: 14px; background: none; border: 0; padding: 0 2px; color: #303038; cursor: pointer; }
+.dlg button::before { content: "▶ "; color: transparent; }
+.dlg button:hover::before, .dlg button:focus-visible::before { color: #303038; }
+.dlg button:focus-visible { outline: 2px dashed #48607a; }
+
+/* commandes */
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.controls button, .seg button { font-family: var(--font-pixel); font-size: 15px; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+.controls button:hover { border-color: var(--accent); }
+.controls button:focus-visible, .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.controls .q { background: #3a1f1a; border-color: #7a3a2c; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; background: transparent; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: #1a0f0a; }
+.spacer { flex: 1; }
+.stat { font: 12px/1 ui-monospace, Consolas, monospace; color: var(--muted); font-variant-numeric: tabular-nums; }
+label.chk { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 14px; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--muted); }
+.legend span::before { content: ""; display: inline-block; width: 10px; height: 8px; margin-right: 6px; border: 1px solid #000; }
+.legend .r::before { background: var(--run); } .legend .d::before { background: var(--done); } .legend .f::before { background: var(--fail); }
+
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
+.note { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px 18px; min-width: 0; }
+.note h2 { font-family: var(--font-pixel); font-weight: 600; font-size: 19px; margin: 0 0 6px; }
+.note p, .note li { color: #c9c6bd; font-size: 14px; margin: 0 0 8px; }
+.note ul { padding-left: 18px; margin: 0; }
+.note table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+.note td { padding: 4px 0; border-bottom: 1px solid var(--line); color: #c9c6bd; }
+.note td:last-child { text-align: right; color: var(--fg); }
+.note small { color: var(--muted); font-size: 12px; }
+code { font-family: ui-monospace, Consolas, monospace; font-size: .9em; background: #ffffff10; padding: 0 4px; border-radius: 3px; }
+
+@media (max-width: 700px) {
+  .desk { aspect-ratio: auto; min-height: 520px; }
+  .win { left: 4%; right: 4%; width: auto; top: 46%; height: 34%; }
+}
+@media (prefers-reduced-motion: reduce) { .popup { animation: none; } .dlg .arrow { animation: none; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Maquette · PokAgent</div>
+    <h1>Le labo de Claude, en fond d'écran</h1>
+    <p>Chaque session Claude Code est une rangée de salles. La première est le labo de Claude ; chaque agent ouvre une nouvelle salle où son dresseur va et vient. Quand une session attend ta réponse, son personnage passe au premier plan avec un petit bruit.</p>
+  </header>
+
+  <div class="desk" id="desk">
+    <div class="widget"><canvas id="view"></canvas></div>
+    <div class="taskbar" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+    <div class="popup" id="popup" hidden role="alert">
+      <canvas id="portrait" width="12" height="16"></canvas>
+      <div class="dlg">
+        <div id="qtext"></div>
+        <div class="acts"><button id="qopen">Ouvrir la session</button><button id="qlater">Plus tard</button></div>
+        <span class="arrow">▼</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button id="bAgent">+ Agent</button>
+    <button id="bSession">+ Session</button>
+    <button id="bDone">Terminer un agent</button>
+    <button id="bFail">Échec</button>
+    <button id="bQ" class="q">Claude a une question</button>
+    <span class="spacer"></span>
+    <span class="seg" role="group" aria-label="Images par seconde">
+      <button data-fps="2">2 im/s</button><button data-fps="8" aria-pressed="true">8 im/s</button><button data-fps="20">20 im/s</button>
+    </span>
+    <label class="chk"><input type="checkbox" id="auto" checked> Démo auto</label>
+    <label class="chk"><input type="checkbox" id="sound" checked> Son</label>
+  </div>
+  <div class="legend">
+    <span class="r">Écran bleu : agent en cours</span><span class="d">or : terminé</span><span class="f">rouge : échec</span>
+    <span class="stat" id="stat"></span>
+  </div>
+
+  <section class="notes">
+    <div class="note">
+      <h2>Faisable ?</h2>
+      <p>Oui. Le programme Rust ouvre une fenêtre Win32 et l'accroche derrière les icônes du bureau (technique « WorkerW », celle de Wallpaper Engine et Lively). Variante : une petite fenêtre toujours visible, transparente aux clics.</p>
+      <p>La scène est dessinée en vrais pixels (480×300 au plus) sur le CPU, puis agrandie ×2 sans lissage. Ni navigateur, ni moteur 3D, ni GPU.</p>
+    </div>
+    <div class="note">
+      <h2>Coût visé</h2>
+      <table>
+        <tr><td>Mémoire</td><td>10 à 20 Mo</td></tr>
+        <tr><td>CPU, rien ne bouge</td><td>≈ 0 %</td></tr>
+        <tr><td>CPU, 8 im/s</td><td>&lt; 1 %</td></tr>
+        <tr><td>GPU</td><td>aucun</td></tr>
+        <tr><td>Bureau caché (jeu, plein écran)</td><td>en pause</td></tr>
+      </table>
+      <small>Estimations à mesurer sur le prototype. Pour comparer : ClaudeIsles (Node + navigateur + Three.js) tourne autour de 300 à 600 Mo.</small>
+    </div>
+    <div class="note">
+      <h2>Pile Rust</h2>
+      <ul>
+        <li><code>windows-rs</code> : fenêtre, WorkerW, son système</li>
+        <li><code>softbuffer</code> : copie du tampon de pixels à l'écran</li>
+        <li><code>notify</code> : suit <code>~/.claude/projects/**/*.jsonl</code> sans sondage</li>
+        <li><code>serde_json</code> : lecture des journaux, portée de <code>watcher.mjs</code></li>
+        <li>Icône de zone de notification : quitter, choisir le coin, muet</li>
+      </ul>
+    </div>
+    <div class="note">
+      <h2>Détecter une question</h2>
+      <p>Les journaux ne disent pas toujours que Claude attend. Le plus fiable est le hook <code>Notification</code> de Claude Code, qui se déclenche sur une demande de permission ou une attente de réponse : il écrit un petit fichier que le widget surveille.</p>
+      <p>Sans hook : un appel d'outil resté sans résultat depuis quelques secondes, ou un appel <code>AskUserQuestion</code>. Moins sûr.</p>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+  const RW = 96, RH = 72, GAP = 6, MAX_ROOMS = 5;
+  const view = document.getElementById('view');
+  const vctx = view.getContext('2d');
+  const nat = document.createElement('canvas');
+  const ctx = nat.getContext('2d');
+  const desk = document.getElementById('desk');
+
+  // ---------- sprites (10×14, '.' = transparent) ----------
+  const HEAD_DOWN = ["...kkkk...","..khhhhk..",".khhwwhhk.","kHHHHHHHHk",".kskssksk.",".kssssssk.","..kSSSSk..",".kbbwwbbk.","kbbbbbbbbk","ksbbbbbbsk",".kBBBBBBk.",".kppkkppk."];
+  const HEAD_UP = ["...kkkk...","..khhhhk..",".khhhhhhk.",".khhhhhhk.",".kHHHHHHk.",".kHHHHHHk.","..kSSSSk..",".kbbbbbbk.","kbbbbbbbbk","ksbbbbbbsk",".kBBBBBBk.",".kppkkppk."];
+  const HEAD_SIDE = ["...kkkk...","..khhhhk..",".khhhhwwk.",".kHHHHHHHk",".kHsssksk.",".kssssssk.","..kSSSSk..","..kbbbbk..",".kbbbbbbk.",".kbbbsbbk.","..kBBBBk..","..kppppk.."];
+  const LEGS = {
+    down: [[".kpk..kpk.",".kkk..kkk."],[".kpk..kk..",".kkk......"],["..kk..kpk.","......kkk."]],
+    side: [["..kpppk...","..kkkkk..."],["..kp.kpk..",".kk...kk.."],["..kp.kpk..",".kk...kk.."]],
+  };
+  const BUBBLE = ["kkkkkkk","kwwrwwk","kwwrwwk","kwwrwwk","kwwwwwk","kwwrwwk","kkkkkkk","..kk...","..k...."];
+  const BASE = { k:'#282830', w:'#f8f8f8', s:'#f8c8a0', S:'#d8a078', p:'#384868', r:'#e03030' };
+  const pal = (h,H,b,B,p) => Object.assign({}, BASE, {h,H,b,B}, p ? {p} : {});
+  const CLAUDE = pal('#d97757','#a8553a','#f4f2ec','#c8c4b8','#4a4458');
+  const PALS = [
+    pal('#e04848','#a02828','#3868c8','#284890'),
+    pal('#48a848','#2c7a30','#e8c040','#b89020'),
+    pal('#8858c8','#603898','#48b0a8','#2c8078'),
+    pal('#f08830','#b86018','#787888','#505060'),
+    pal('#e868a8','#b04078','#384878','#242e58'),
+    pal('#3898d8','#2068a0','#d85050','#a03030'),
+  ];
+
+  function frameRows(dir, step) {
+    const head = dir === 'up' ? HEAD_UP : (dir === 'down' ? HEAD_DOWN : HEAD_SIDE);
+    const legs = LEGS[dir === 'up' || dir === 'down' ? 'down' : 'side'][step];
+    return head.concat(legs);
+  }
+  function blit(c, rows, x, y, p, flip) {
+    for (let r = 0; r < rows.length; r++) {
+      const row = rows[r], w = row.length;
+      for (let i = 0; i < w; i++) {
+        const ch = row[i];
+        if (ch === '.') continue;
+        c.fillStyle = p[ch];
+        c.fillRect(x + (flip ? w - 1 - i : i), y + r, 1, 1);
+      }
+    }
+  }
+
+  // ---------- décor des salles (pré-rendu une fois par salle) ----------
+  function rect(c, x, y, w, h, col) { c.fillStyle = col; c.fillRect(x, y, w, h); }
+  function makeBg(kind, variant) {
+    const cv = document.createElement('canvas'); cv.width = RW; cv.height = RH;
+    const c = cv.getContext('2d');
+    rect(c, 0, 0, RW, RH, '#282838');
+    // mur
+    rect(c, 1, 1, RW - 2, 19, '#e8dcc0');
+    for (let x = 4; x < RW - 1; x += 6) rect(c, x, 1, 1, 19, '#d8cbaa');
+    rect(c, 1, 19, RW - 2, 3, '#b09070'); rect(c, 1, 22, RW - 2, 1, '#806848');
+    // parquet
+    for (let cy = 0; cy < 7; cy++) for (let cx = 0; cx < 12; cx++) {
+      const x = 1 + cx * 8, y = 23 + cy * 8;
+      rect(c, x, y, 8, 8, '#dcc070');
+      const v = (cx + cy) % 2;
+      for (const o of [3, 7]) v ? rect(c, x + o, y, 1, 8, '#c4a458') : rect(c, x, y + o, 8, 1, '#c4a458');
+    }
+    rect(c, 0, RH - 1, RW, 1, '#282838'); rect(c, RW - 1, 0, 1, RH, '#282838');
+    // tapis
+    rect(c, 30, 36, 36, 22, '#2e6a3a'); rect(c, 31, 37, 34, 20, '#3c7a48'); rect(c, 33, 39, 30, 16, '#6cb468');
+    for (let y = 41; y < 54; y += 4) for (let x = 35; x < 62; x += 4) rect(c, x, y, 1, 1, '#a0d890');
+    // bureau + PC (écran dessiné à part, selon le statut)
+    rect(c, 5, 15, 22, 9, '#80502c'); rect(c, 6, 16, 20, 7, '#a06a40'); rect(c, 6, 16, 20, 2, '#c48a58');
+    rect(c, 8, 4, 16, 12, '#282838'); rect(c, 9, 5, 14, 10, '#b8b8c0'); rect(c, 14, 15, 4, 1, '#888898');
+    // plante
+    const px = RW - 15;
+    rect(c, px + 1, 9, 9, 9, '#2e6a2c'); rect(c, px + 2, 8, 7, 8, '#4c9a40'); rect(c, px + 4, 10, 2, 2, '#80c860');
+    rect(c, px + 2, 17, 7, 6, '#803c20'); rect(c, px + 3, 17, 5, 5, '#b86838');
+    if (kind === 'hub') {
+      // fenêtre + bibliothèque
+      rect(c, 36, 4, 20, 12, '#806848'); rect(c, 37, 5, 18, 10, '#98d0f0'); rect(c, 46, 5, 1, 10, '#806848'); rect(c, 38, 6, 3, 2, '#e0f4ff');
+      rect(c, 60, 2, 18, 20, '#5a3418'); rect(c, 61, 3, 16, 18, '#906038');
+      const books = ['#d84848','#4878d8','#e8c040','#48a858','#8858c8','#e08838'];
+      for (let s = 0; s < 3; s++) for (let i = 0; i < 6; i++) rect(c, 62 + i * 2 + (s % 2), 4 + s * 6, 2, 5, books[(i + s * 2) % 6]);
+      for (let s = 1; s < 3; s++) rect(c, 61, 3 + s * 6, 16, 1, '#5a3418');
+    } else if (variant % 2 === 0) {
+      rect(c, 42, 4, 14, 11, '#282838'); rect(c, 43, 5, 12, 9, ['#f0a0a0','#a0c8f0','#c0e090'][variant % 3]);
+      rect(c, 46, 7, 6, 5, '#f8f8f8');
+    } else {
+      rect(c, 52, 6, 18, 14, '#5a3418'); rect(c, 53, 7, 16, 12, '#906038'); rect(c, 53, 12, 16, 1, '#5a3418');
+      rect(c, 55, 8, 3, 4, '#4878d8'); rect(c, 60, 14, 6, 4, '#e8c040');
+    }
+    return cv;
+  }
+
+  // ---------- état ----------
+  const now = () => performance.now() / 1000;
+  let sessions = [], uid = 1, pending = [], fps = 8;
+  const NAMES = ['explore-api','refacto-ui','tests-e2e','doc-readme','fix-watcher','build-rust','audit-deps','sprites-16px','port-sse','bench-cpu'];
+  const QUESTIONS = [
+    'Je peux lancer <strong>npm install</strong> dans ce dossier ?',
+    'Deux pistes pour le watcher : <strong>notify</strong> ou sondage. Laquelle ?',
+    'J\'ai besoin d\'écrire dans <strong>src/themes/</strong>. J\'autorise ?',
+    'Le build casse sous Node 20. On passe en <strong>Node 22</strong> ?',
+  ];
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+
+  function mkChar() { return { x: rnd(30, 56), y: rnd(28, 50), tx: 40, ty: 40, dir: 'down', dist: 0, wait: rnd(0.3, 2) }; }
+  function addSession(name) {
+    const s = { id: uid++, name, rooms: [] };
+    s.rooms.push({ kind: 'hub', name, status: 'running', pal: CLAUDE, ch: mkChar(), born: now(), bg: makeBg('hub', 0) });
+    sessions.push(s); return s;
+  }
+  function addAgent(s) {
+    s = s || sessions.find(x => x.rooms.length < MAX_ROOMS);
+    if (!s || s.rooms.length >= MAX_ROOMS) return null;
+    const used = new Set(sessions.flatMap(x => x.rooms.map(r => r.name)));
+    const name = NAMES.find(n => !used.has(n)) || 'agent-' + uid;
+    const v = uid++;
+    const r = { kind: 'agent', name, status: 'running', pal: PALS[v % PALS.length], ch: mkChar(), born: now(), bg: makeBg('agent', v), q: null, ended: 0 };
+    s.rooms.push(r); return r;
+  }
+  const agents = (st) => sessions.flatMap(s => s.rooms.filter(r => r.kind === 'agent' && (!st || r.status === st)).map(r => ({ s, r })));
+
+  // ---------- son (WebAudio, carré façon console portable) ----------
+  let actx = null;
+  function beep() {
+    if (!document.getElementById('sound').checked) return;
+    try {
+      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+      if (actx.state !== 'running') return;
+      const notes = [[1318.5, 0], [1975.5, 0.09], [1975.5, 0.2]];
+      for (const [f, t] of notes) {
+        const o = actx.createOscillator(), g = actx.createGain();
+        o.type = 'square'; o.frequency.value = f;
+        g.gain.setValueAtTime(0.06, actx.currentTime + t); g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + t + 0.08);
+        o.connect(g).connect(actx.destination); o.start(actx.currentTime + t); o.stop(actx.currentTime + t + 0.09);
+      }
+    } catch (e) {}
+  }
+  function unlockAudio() { try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); actx.resume(); } catch (e) {} }
+
+  // ---------- questions ----------
+  const popup = document.getElementById('popup');
+  const portrait = document.getElementById('portrait').getContext('2d');
+  function ask(target) {
+    const list = agents('running').filter(a => !a.r.q);
+    const t = target || (list.length ? pick(list) : null);
+    if (!t) return;
+    t.r.q = pick(QUESTIONS);
+    pending.push(t);
+    if (pending.length === 1) showPopup();
+    beep();
+  }
+  function showPopup() {
+    const t = pending[0];
+    if (!t) { popup.hidden = true; return; }
+    portrait.clearRect(0, 0, 12, 16);
+    blit(portrait, frameRows('down', 0), 1, 1, t.r.pal, false);
+    document.getElementById('qtext').innerHTML = `<strong>${t.r.name.toUpperCase()}</strong> · ${t.s.name}<br>${t.r.q}`;
+    popup.hidden = false;
+    popup.style.animation = 'none'; void popup.offsetWidth; popup.style.animation = '';
+  }
+  function closeQ() { const t = pending.shift(); if (t) t.r.q = null; showPopup(); }
+  document.getElementById('qopen').onclick = closeQ;
+  document.getElementById('qlater').onclick = () => { if (pending.length > 1) pending.push(pending.shift()); else popup.hidden = true; showPopup(); };
+
+  // ---------- simulation ----------
+  const SPEED = 22;
+  function update(dt) {
+    const t = now();
+    for (const s of sessions) for (const r of s.rooms) {
+      const c = r.ch;
+      if (r.q || (r.kind === 'agent' && r.status !== 'running')) { c.dir = 'down'; continue; }
+      if (c.wait > 0) { c.wait -= dt; continue; }
+      const dx = c.tx - c.x, dy = c.ty - c.y;
+      const step = SPEED * dt;
+      if (Math.abs(dx) > 0.5) { const m = Math.sign(dx) * Math.min(Math.abs(dx), step); c.x += m; c.dist += Math.abs(m); c.dir = dx > 0 ? 'right' : 'left'; }
+      else if (Math.abs(dy) > 0.5) { const m = Math.sign(dy) * Math.min(Math.abs(dy), step); c.y += m; c.dist += Math.abs(m); c.dir = dy > 0 ? 'down' : 'up'; }
+      else {
+        c.wait = rnd(0.8, 3);
+        if (Math.random() < 0.35) { c.tx = 11; c.ty = 22; c.atDesk = true; } // va travailler au PC
+        else { c.tx = Math.round(rnd(4, RW - 26)); c.ty = Math.round(rnd(24, RH - 16)); c.atDesk = false; }
+        if (c.atDesk && Math.abs(c.x - 11) < 1 && Math.abs(c.y - 22) < 1) c.dir = 'up';
+      }
+    }
+    // les agents terminés depuis un moment repartent (la salle se ferme)
+    for (const s of sessions) s.rooms = s.rooms.filter(r => !(r.kind === 'agent' && r.status !== 'running' && t - r.ended > 25));
+  }
+
+  // ---------- rendu ----------
+  let lastW = 0, lastH = 0;
+  function layoutSize() {
+    const cols = Math.max(2, ...sessions.map(s => s.rooms.length));
+    return [cols * RW, Math.max(1, sessions.length) * (RH + GAP) - GAP];
+  }
+  function fitView(w, h) {
+    const max = Math.max(200, desk.clientWidth * 0.62);
+    let scale = Math.max(1, Math.min(3, Math.floor(max / w)));
+    let cw = w * scale;
+    if (cw > desk.clientWidth - 24) cw = desk.clientWidth - 24;
+    view.width = w; view.height = h;
+    view.style.width = cw + 'px'; view.style.height = (cw * h / w) + 'px';
+  }
+  function draw() {
+    const [w, h] = layoutSize();
+    if (w !== lastW || h !== lastH) { nat.width = w; nat.height = h; lastW = w; lastH = h; fitView(w, h); }
+    ctx.clearRect(0, 0, w, h);
+    const t = now(), blinkOn = Math.floor(t * 2) % 2 === 0;
+    sessions.forEach((s, i) => {
+      s.rooms.forEach((r, j) => {
+        const rx = j * RW, ry = i * (RH + GAP);
+        ctx.drawImage(r.bg, rx, ry);
+        // écran du PC
+        let scr = r.status === 'done' ? '#f0c040' : r.status === 'failed' ? '#e04848' : (blinkOn ? '#58a8f8' : '#3878c8');
+        if (r.kind === 'hub') scr = agents('running').some(a => a.s === s) ? (blinkOn ? '#58a8f8' : '#3878c8') : '#68c8a0';
+        rect(ctx, rx + 10, ry + 6, 12, 8, scr); rect(ctx, rx + 11, ry + 7, 3, 1, '#ffffff80');
+        // porte vers la salle suivante
+        if (j < s.rooms.length - 1) { rect(ctx, rx + RW - 1, ry + 40, 2, 14, '#dcc070'); rect(ctx, rx + RW - 1, ry + 39, 2, 1, '#806848'); }
+        // personnage
+        const c = r.ch, moving = c.wait <= 0 && !(r.q || (r.kind === 'agent' && r.status !== 'running'));
+        const step = moving ? [0, 1, 0, 2][Math.floor(c.dist / 4) % 4] : 0;
+        const x = rx + Math.round(c.x), y = ry + Math.round(c.y) - (step ? 1 : 0);
+        rect(ctx, x + 2, ry + Math.round(c.y) + 13, 7, 2, '#00000030');
+        blit(ctx, frameRows(c.dir, step), x, y, r.pal, c.dir === 'left');
+        if (r.q && blinkOn) blit(ctx, BUBBLE, x + 2, y - 11, BASE, false);
+        // plaque
+        ctx.font = '8px Silkscreen';
+        const label = r.kind === 'hub' ? 'CLAUDE · ' + s.name : r.name;
+        const tw = Math.ceil(ctx.measureText(label).width);
+        rect(ctx, rx + 2, ry + RH - 11, tw + 6, 10, '#000000a0');
+        ctx.fillStyle = '#f8f0d8'; ctx.fillText(label, rx + 5, ry + RH - 3);
+        // fondu d'apparition (4 paliers)
+        const age = t - r.born;
+        if (age < 0.6) { rect(ctx, rx, ry, RW, RH, `rgba(8,8,16,${1 - Math.floor(age / 0.15) * 0.25})`); }
+      });
+    });
+    vctx.imageSmoothingEnabled = false;
+    vctx.clearRect(0, 0, w, h);
+    vctx.drawImage(nat, 0, 0);
+    document.getElementById('stat').textContent = `rendu natif ${w}×${h} px · ${fps} im/s · ${agents().length} agent(s)`;
+  }
+
+  // boucle à cadence fixe (setTimeout, comme le ferait le programme Rust), en pause si l'onglet est caché
+  let last = now();
+  function tick() {
+    const t = now(); const dt = Math.min(0.5, t - last); last = t;
+    if (!document.hidden) { update(dt); draw(); }
+    setTimeout(tick, 1000 / fps);
+  }
+
+  // ---------- démo ----------
+  function finish(st) {
+    const list = agents('running').filter(a => !a.r.q);
+    if (!list.length) return;
+    const a = pick(list); a.r.status = st; a.r.ended = now();
+  }
+  function autoEvent() {
+    if (!document.getElementById('auto').checked || document.hidden) return;
+    const n = agents().length, x = Math.random();
+    if (x < 0.38 && n < 9) addAgent(pick(sessions.filter(s => s.rooms.length < MAX_ROOMS)) || null);
+    else if (x < 0.62) finish('done');
+    else if (x < 0.7) finish('failed');
+    else if (x < 0.84 && pending.length === 0) ask();
+    else if (x < 0.9 && sessions.length < 3) { const s = addSession(['MyLife','PokAgent','ClaudeIsles'].find(nm => !sessions.some(s => s.name === nm)) || 'Projet'); addAgent(s); }
+  }
+
+  document.getElementById('bAgent').onclick = () => addAgent();
+  document.getElementById('bSession').onclick = () => { if (sessions.length < 4) addSession(['MyLife','Cap','Notes','Projet'].find(nm => !sessions.some(s => s.name === nm)) || 'Projet'); };
+  document.getElementById('bDone').onclick = () => finish('done');
+  document.getElementById('bFail').onclick = () => finish('failed');
+  document.getElementById('bQ').onclick = () => { unlockAudio(); setTimeout(() => ask(), 30); };
+  document.addEventListener('pointerdown', unlockAudio, { once: true });
+  document.querySelectorAll('.seg button').forEach(b => b.onclick = () => {
+    fps = +b.dataset.fps;
+    document.querySelectorAll('.seg button').forEach(o => o.setAttribute('aria-pressed', String(o === b)));
+  });
+  window.addEventListener('resize', () => { lastW = 0; });
+
+  // état initial réaliste
+  const s1 = addSession('ClaudeIsles');
+  addAgent(s1); const d = addAgent(s1); d.status = 'done'; d.ended = now();
+  const s2 = addSession('PokAgent');
+  addAgent(s2);
+  for (const s of sessions) for (const r of s.rooms) r.born = -10;
+
+  const start = () => { tick(); setInterval(autoEvent, 3500); setTimeout(() => ask(agents('running')[0]), 2500); };
+  (document.fonts && document.fonts.load ? document.fonts.load('8px Silkscreen').catch(() => {}) : Promise.resolve()).then(start);
+})();
+</script>

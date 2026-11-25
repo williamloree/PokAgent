@@ -1,0 +1,492 @@
+<title>PokAgent DS</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Pixelify+Sans:wght@400;600&family=Silkscreen&display=swap">
+<style>
+/* Layout: faux bureau 16:10 (widget en haut à gauche, popup au premier plan), commandes dessous. Rendu "génération DS". */
+:root {
+  --bg: #12141c;
+  --panel: #1b1e2a;
+  --line: #2b2f40;
+  --fg: #ebe8df;
+  --muted: #9b99a6;
+  --accent: #d97757;
+  --run: #58a8f8;
+  --done: #f0c040;
+  --fail: #e04848;
+  --font-pixel: "Pixelify Sans", "Courier New", monospace;
+  --font-body: "Inter", system-ui, sans-serif;
+  color-scheme: dark;
+}
+html, body { background: var(--bg); color: var(--fg); }
+body { font-family: var(--font-body); font-size: 15px; line-height: 1.55; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 28px 56px; }
+.wrap { max-width: 1180px; margin: 0 auto; display: grid; gap: 18px; }
+header { display: grid; gap: 4px; }
+.eyebrow { font-family: var(--font-pixel); color: var(--accent); letter-spacing: .08em; text-transform: uppercase; font-size: 13px; }
+h1 { font-family: var(--font-pixel); font-weight: 600; font-size: clamp(26px, 4vw, 38px); line-height: 1.1; margin: 0; text-wrap: balance; }
+header p { margin: 0; color: var(--muted); max-width: 75ch; }
+header a { color: var(--accent); }
+
+.desk { position: relative; aspect-ratio: 16 / 10; min-height: 440px; max-width: 100%; border-radius: 10px; overflow: hidden; border: 1px solid var(--line);
+  background: radial-gradient(120% 90% at 70% 110%, #2a3358 0%, #161a2c 55%, #0e1020 100%); }
+.widget { position: absolute; top: 12px; left: 12px; z-index: 1; line-height: 0; filter: drop-shadow(0 6px 14px #0008); }
+.widget canvas { image-rendering: pixelated; display: block; }
+.taskbar { position: absolute; z-index: 3; left: 0; right: 0; bottom: 0; height: 30px; background: #0b0c12e6; border-top: 1px solid #2a2e40; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.taskbar span { width: 18px; height: 18px; border-radius: 4px; background: #2c3248; }
+.taskbar span:first-child { background: #3d6fd6; }
+
+/* popup au premier plan, boîte de dialogue façon DS (texte avec ombre portée) */
+.popup { position: absolute; z-index: 5; right: 16px; bottom: 44px; width: min(440px, calc(100% - 32px)); display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: end;
+  animation: slide .45s steps(5) both; }
+@keyframes slide { from { transform: translateY(120%); } to { transform: none; } }
+.popup canvas { width: 54px; height: 78px; image-rendering: pixelated; }
+.dlg { position: relative; min-width: 0; background: linear-gradient(#ffffff, #f4f4f8); color: #505058; font-family: var(--font-pixel); font-size: 17px; line-height: 1.4; padding: 12px 18px 14px;
+  border-radius: 10px; border: 2px solid #585868; box-shadow: inset 0 0 0 3px #ffffff, inset 0 0 0 5px #d8dce8, 0 10px 30px #000a; text-shadow: 1px 1px 0 #d0d0dc; }
+.dlg strong { color: #e05048; font-weight: 600; text-shadow: 1px 1px 0 #f8c0b8; }
+.dlg .arrow { position: absolute; right: 12px; bottom: 6px; color: #e05048; font-size: 12px; animation: blink .8s steps(2) infinite; text-shadow: none; }
+@keyframes blink { 50% { opacity: 0; } }
+.dlg .acts { display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+.dlg button { font: inherit; font-size: 14px; background: none; border: 0; padding: 0 2px; color: #505058; text-shadow: inherit; cursor: pointer; }
+.dlg button::before { content: "▶ "; color: transparent; text-shadow: none; }
+.dlg button:hover::before, .dlg button:focus-visible::before { color: #505058; }
+.dlg button:focus-visible { outline: 2px dashed #8890a8; }
+
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.controls button, .seg button { font-family: var(--font-pixel); font-size: 15px; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+.controls button:hover { border-color: var(--accent); }
+.controls button:focus-visible, .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.controls .q { background: #3a1f1a; border-color: #7a3a2c; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; background: transparent; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: #1a0f0a; }
+.spacer { flex: 1; }
+label.chk { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 14px; }
+.legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; color: var(--muted); }
+.legend span::before { content: ""; display: inline-block; width: 10px; height: 8px; margin-right: 6px; border: 1px solid #000; }
+.legend .r::before { background: var(--run); } .legend .d::before { background: var(--done); } .legend .f::before { background: var(--fail); }
+.legend .stat { font: 12px/1.6 ui-monospace, Consolas, monospace; font-variant-numeric: tabular-nums; }
+.legend .stat::before { display: none; }
+
+@media (max-width: 700px) {
+  .desk { aspect-ratio: auto; min-height: 560px; }
+}
+@media (prefers-reduced-motion: reduce) { .popup, .dlg .arrow { animation: none; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Maquette · PokAgent · rendu DS</div>
+    <h1>Le labo de Claude, version DS</h1>
+    <p>Même scène que la <a href="https://claude.ai/artifact/9EfRb4vJMHnUNoC1Mnq6Kg">première maquette</a>, dans l'esprit de la génération suivante : parquet en lames, murs tapissés avec lambris, meubles vus en perspective avec leurs ombres, lumière qui tombe de la fenêtre, personnages de 16×24 avec contour et ombrage. Chaque décor est calculé une seule fois à l'ouverture de la salle, donc le coût en fonctionnement reste celui de la version simple.</p>
+  </header>
+
+  <div class="desk" id="desk">
+    <div class="widget"><canvas id="view"></canvas></div>
+    <div class="taskbar" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+    <div class="popup" id="popup" hidden role="alert">
+      <canvas id="portrait" width="18" height="26"></canvas>
+      <div class="dlg">
+        <div id="qtext"></div>
+        <div class="acts"><button id="qopen">Ouvrir la session</button><button id="qlater">Plus tard</button></div>
+        <span class="arrow">▼</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button id="bAgent">+ Agent</button>
+    <button id="bSession">+ Session</button>
+    <button id="bDone">Terminer un agent</button>
+    <button id="bFail">Échec</button>
+    <button id="bQ" class="q">Claude a une question</button>
+    <span class="spacer"></span>
+    <span class="seg" role="group" aria-label="Images par seconde">
+      <button data-fps="2">2 im/s</button><button data-fps="8" aria-pressed="true">8 im/s</button><button data-fps="20">20 im/s</button>
+    </span>
+    <label class="chk"><input type="checkbox" id="auto" checked> Démo auto</label>
+    <label class="chk"><input type="checkbox" id="sound" checked> Son</label>
+  </div>
+  <div class="legend">
+    <span class="r">Écran bleu : agent en cours</span><span class="d">or : terminé</span><span class="f">rouge : échec</span>
+    <span class="stat" id="stat"></span>
+  </div>
+</div>
+
+<script>
+(() => {
+  const RW = 128, RH = 96, GAP = 8, MAX_ROOMS = 5;
+  const FLOOR = '#c9935c', OUTLINE = '#2b2633';
+  const view = document.getElementById('view'), vctx = view.getContext('2d');
+  const nat = document.createElement('canvas'), ctx = nat.getContext('2d');
+  const desk = document.getElementById('desk');
+
+  // ---------- outils ----------
+  const canvas = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+  const rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const sh = (h, a) => { const t = a < 0 ? 0 : 255, k = Math.abs(a); return '#' + rgb(h).map(v => Math.round(v + (t - v) * k).toString(16).padStart(2, '0')).join(''); };
+  const rng = seed => () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+  function R(c, x, y, w, h, col) { c.fillStyle = col; c.fillRect(x, y, w, h); }
+  function blob(c, x, y, w, h, col) { R(c, x + 1, y, w - 2, h, col); R(c, x, y + 1, w, h - 2, col); }
+  // contour : tout pixel vide voisin d'un pixel plein devient sombre
+  function outline(cv, col) {
+    const c = cv.getContext('2d'), { width: w, height: h } = cv;
+    const im = c.getImageData(0, 0, w, h), d = im.data, src = new Uint8Array(w * h);
+    for (let i = 0; i < w * h; i++) src[i] = d[i * 4 + 3] > 0 ? 1 : 0;
+    const [r, g, b] = rgb(col);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = y * w + x; if (src[i]) continue;
+      if ((x > 0 && src[i - 1]) || (x < w - 1 && src[i + 1]) || (y > 0 && src[i - w]) || (y < h - 1 && src[i + w])) {
+        d[i * 4] = r; d[i * 4 + 1] = g; d[i * 4 + 2] = b; d[i * 4 + 3] = 255;
+      }
+    }
+    c.putImageData(im, 0, 0);
+  }
+
+  // ---------- personnages 16×24, dessinés une fois par agent (atlas) ----------
+  const SKIN = '#f6c9a0', SKIN_D = '#dca07a', EYE = '#2a2a38', BLUSH = '#f0a8a0', SHOE = '#3a3038';
+  function buildChar(P, dir, f) {
+    const cv = canvas(18, 26), c = cv.getContext('2d');
+    const r = (x, y, w, h, col) => R(c, x + 1, y + 1, w, h, col);
+    const capD = sh(P.cap, -.3), capH = sh(P.cap, .35), shD = sh(P.shirt, -.25), shH = sh(P.shirt, .25), paD = sh(P.pants, -.3), hairD = sh(P.hair, -.3);
+    if (dir === 'down' || dir === 'up') {
+      const lU = f === 1 ? 1 : 0, rU = f === 2 ? 1 : 0;
+      r(4, 17, 3, 4 - lU, P.pants); r(9, 17, 3, 4 - rU, P.pants); r(6, 17, 1, 4 - lU, paD); r(11, 17, 1, 4 - rU, paD);
+      r(4, 21 - lU, 3, 2, SHOE); r(9, 21 - rU, 3, 2, SHOE);
+      r(3, 11, 10, 7, P.shirt); r(3, 11, 1, 6, shH); r(11, 11, 2, 7, shD); r(3, 17, 10, 1, shD);
+      if (P.coat) { r(3, 17, 10, 2, P.shirt); r(3, 18, 10, 1, shD); r(11, 17, 2, 2, shD); }
+      if (dir === 'down') { r(6, 11, 4, 1, '#ffffff'); if (P.coat) { r(7, 12, 2, 4, '#d97757'); r(8, 12, 1, 4, '#b05a40'); } }
+      const la = f === 1 ? -1 : f === 2 ? 1 : 0;
+      r(1, 12 + la, 2, 4, P.shirt); r(1, 15 + la, 2, 1, shD); r(1, 16 + la, 2, 2, SKIN);
+      r(13, 12 - la, 2, 4, shD); r(13, 16 - la, 2, 2, SKIN_D);
+      r(3, 2, 10, 9, SKIN); r(2, 3, 12, 7, SKIN); r(12, 3, 2, 7, SKIN_D); r(4, 10, 8, 1, SKIN_D);
+      if (dir === 'down') {
+        r(2, 4, 2, 5, P.hair); r(12, 4, 2, 5, hairD); r(4, 5, 8, 1, hairD);
+        r(5, 7, 1, 2, EYE); r(10, 7, 1, 2, EYE); r(4, 9, 1, 1, BLUSH); r(11, 9, 1, 1, BLUSH); r(7, 9, 2, 1, SKIN_D);
+      } else {
+        r(2, 3, 12, 7, P.hair); r(3, 9, 10, 1, hairD); r(12, 3, 2, 7, hairD); r(5, 10, 6, 1, SKIN_D);
+      }
+      r(3, 0, 10, 1, P.cap); r(2, 1, 12, 4, P.cap); r(4, 1, 3, 1, capH); r(3, 2, 1, 1, capH); r(12, 1, 2, 4, capD);
+      if (dir === 'down') { r(2, 5, 12, 1, capD); r(6, 2, 4, 2, '#ffffff'); r(7, 2, 2, 1, P.cap); }
+      else r(2, 5, 12, 1, P.cap);
+    } else {
+      if (f === 0) { r(6, 17, 4, 4, P.pants); r(9, 17, 1, 4, paD); r(6, 21, 5, 2, SHOE); }
+      else { const a = f === 1; r(4, 17, 3, 4, a ? P.pants : paD); r(9, 17, 3, 4, a ? paD : P.pants); r(3, 21, 4, 2, SHOE); r(9, 21, 4, 2, SHOE); }
+      r(4, 11, 8, 7, P.shirt); r(4, 11, 1, 6, shH); r(10, 11, 2, 7, shD); r(4, 17, 8, 1, shD);
+      if (P.coat) { r(4, 17, 8, 2, P.shirt); r(4, 18, 8, 1, shD); }
+      const ax = f === 1 ? 1 : f === 2 ? -1 : 0;
+      r(7 + ax, 12, 3, 4, shD); r(7 + ax, 16, 3, 2, SKIN);
+      r(4, 2, 9, 9, SKIN); r(3, 3, 11, 7, SKIN); r(4, 10, 7, 1, SKIN_D);
+      r(3, 3, 5, 7, P.hair); r(3, 9, 4, 1, hairD); r(7, 6, 1, 2, SKIN_D);
+      r(11, 7, 1, 2, EYE); r(13, 8, 1, 1, SKIN_D); r(11, 9, 1, 1, BLUSH);
+      r(4, 0, 8, 1, P.cap); r(3, 1, 10, 4, P.cap); r(5, 1, 3, 1, capH); r(3, 4, 4, 1, capD);
+      r(10, 4, 5, 1, P.cap); r(9, 5, 6, 1, capD);
+    }
+    outline(cv, OUTLINE);
+    return cv;
+  }
+  function atlas(P) {
+    const A = {};
+    for (const d of ['down', 'up', 'right']) A[d] = [0, 1, 2].map(f => buildChar(P, d, f));
+    A.left = A.right.map(s => { const cv = canvas(18, 26), c = cv.getContext('2d'); c.scale(-1, 1); c.drawImage(s, -18, 0); return cv; });
+    return A;
+  }
+  const BUBBLE = (() => {
+    const cv = canvas(13, 15), c = cv.getContext('2d');
+    R(c, 2, 1, 9, 11, '#ffffff'); R(c, 1, 2, 11, 9, '#ffffff'); R(c, 5, 12, 3, 1, '#ffffff'); R(c, 5, 13, 1, 1, '#ffffff');
+    R(c, 2, 9, 9, 2, '#e4e6f0');
+    R(c, 5, 3, 3, 5, '#e83838'); R(c, 7, 3, 1, 5, '#a82020'); R(c, 5, 9, 3, 2, '#e83838'); R(c, 7, 9, 1, 2, '#a82020');
+    outline(cv, OUTLINE); return cv;
+  })();
+
+  // ---------- décor des salles (pré-rendu une fois) ----------
+  function bg(kind, seed) {
+    const cv = canvas(RW, RH), c = cv.getContext('2d'), rnd = rng(seed * 7919 + 13);
+    const r = (x, y, w, h, col) => R(c, x, y, w, h, col);
+    const WALLS = ['#e9e2cf', '#dde6dc', '#ebdccb', '#dce2ee'];
+    const wall = kind === 'hub' ? WALLS[0] : WALLS[1 + seed % 3];
+    r(0, 0, RW, RH, '#1c1822');
+    // papier peint : rayures et petit motif
+    r(3, 4, RW - 6, 22, wall);
+    for (let x = 3; x < RW - 3; x += 16) r(x, 4, 8, 22, sh(wall, -.035));
+    for (let x = 3, k = 0; x < RW - 3; x += 8, k++) { const y = k % 2 ? 9 : 18; r(x + 3, y, 2, 1, sh(wall, -.12)); r(x + 2, y + 1, 4, 1, sh(wall, -.12)); r(x + 3, y + 2, 2, 1, sh(wall, -.12)); }
+    let g = c.createLinearGradient(0, 4, 0, 26); g.addColorStop(0, 'rgba(40,20,30,.22)'); g.addColorStop(1, 'rgba(40,20,30,0)');
+    c.fillStyle = g; c.fillRect(3, 4, RW - 6, 22);
+    // lambris + plinthe
+    r(3, 26, RW - 6, 7, '#b5865a'); r(3, 26, RW - 6, 1, '#d8aa78'); r(3, 27, RW - 6, 1, '#8f6640');
+    for (let x = 3; x < RW - 3; x += 12) { r(x, 28, 1, 5, '#8f6640'); r(x + 1, 28, 1, 5, '#c89868'); }
+    r(3, 33, RW - 6, 2, '#5e4030');
+    // parquet en lames
+    c.save(); c.beginPath(); c.rect(3, 35, RW - 6, RH - 38); c.clip();
+    for (let y = 35; y < RH - 3; y += 6) {
+      let x = 3 - Math.floor(rnd() * 30);
+      while (x < RW - 3) {
+        const len = 22 + Math.floor(rnd() * 22), col = sh(FLOOR, (rnd() - .5) * .14);
+        r(x, y, len, 5, col); r(x, y, len, 1, sh(col, .14)); r(x, y + 5, len, 1, '#8d5f38'); r(x + len - 1, y, 1, 5, '#8d5f38');
+        for (let k = 0; k < 2; k++) r(x + 3 + Math.floor(rnd() * (len - 6)), y + 2 + Math.floor(rnd() * 2), 3, 1, sh(col, -.08));
+        x += len;
+      }
+    }
+    c.restore();
+    g = c.createRadialGradient(RW / 2, 62, 8, RW / 2, 62, 80); g.addColorStop(0, 'rgba(255,240,200,.10)'); g.addColorStop(1, 'rgba(30,10,20,.18)');
+    c.fillStyle = g; c.fillRect(3, 35, RW - 6, RH - 38);
+    g = c.createLinearGradient(0, 35, 0, 41); g.addColorStop(0, 'rgba(30,15,10,.30)'); g.addColorStop(1, 'rgba(30,15,10,0)');
+    c.fillStyle = g; c.fillRect(3, 35, RW - 6, 6);
+    // murs latéraux et bord
+    r(0, 0, RW, 4, '#2a2433'); r(0, 0, 3, RH, '#2a2433'); r(RW - 3, 0, 3, RH, '#2a2433'); r(0, RH - 3, RW, 3, '#2a2433');
+    r(2, 4, 1, RH - 7, '#4a4058'); r(RW - 3, 4, 1, RH - 7, '#4a4058'); r(3, RH - 3, RW - 6, 1, '#4a4058');
+    r(0, 0, RW, 1, '#141018'); r(0, 0, 1, RH, '#141018'); r(RW - 1, 0, 1, RH, '#141018'); r(0, RH - 1, RW, 1, '#141018');
+
+    // fenêtre + rayon de lumière
+    function windowAt(wx) {
+      c.fillStyle = 'rgba(255,248,215,.13)';
+      c.beginPath(); c.moveTo(wx + 2, 35); c.lineTo(wx + 24, 35); c.lineTo(wx + 42, RH - 6); c.lineTo(wx + 16, RH - 6); c.closePath(); c.fill();
+      r(wx, 6, 26, 19, '#f2ece2'); r(wx + 24, 6, 2, 19, '#c4bcae'); r(wx, 23, 26, 2, '#c4bcae');
+      const gg = c.createLinearGradient(0, 8, 0, 22); gg.addColorStop(0, '#6fb8ec'); gg.addColorStop(1, '#d4f0ff');
+      c.fillStyle = gg; c.fillRect(wx + 2, 8, 22, 14);
+      r(wx + 4, 10, 5, 1, '#ffffff'); r(wx + 3, 11, 8, 1, '#f4fbff'); r(wx + 15, 15, 6, 1, '#ffffff');
+      r(wx + 12, 8, 2, 14, '#f2ece2'); r(wx + 2, 14, 22, 1, '#f2ece2');
+      r(wx - 2, 25, 30, 2, '#e0d6c6'); r(wx - 2, 27, 30, 1, 'rgba(0,0,0,.18)');
+      r(wx - 5, 4, 36, 1, '#7a5232');
+      for (const cx of [wx - 4, wx + 25]) { r(cx, 5, 5, 22, '#c95a4e'); r(cx + 1, 5, 1, 22, '#e07a6c'); r(cx + 3, 5, 1, 22, '#a8443c'); r(cx, 26, 5, 1, '#8e3630'); }
+    }
+    // bureau + PC (l'écran est dessiné à part)
+    r(7, 46, 30, 3, 'rgba(20,10,10,.25)');
+    r(6, 35, 30, 11, '#9a6a40'); r(6, 35, 3, 11, '#86592f'); r(6, 45, 30, 1, '#6e4a2c');
+    r(20, 37, 14, 7, '#a87648'); r(20, 37, 14, 1, '#c08a58'); r(20, 43, 14, 1, '#7a5232'); r(26, 40, 2, 1, '#e8c070');
+    r(6, 30, 30, 5, '#c8905a'); r(6, 30, 30, 1, '#e0aa70'); r(6, 34, 30, 1, '#a87548');
+    r(12, 31, 18, 1, 'rgba(0,0,0,.2)'); r(19, 29, 4, 2, '#9898a6');
+    r(11, 16, 20, 14, '#e2e2ea'); r(29, 16, 2, 14, '#b0b0bc'); r(11, 28, 20, 2, '#b0b0bc'); r(11, 16, 20, 1, '#f8f8fc'); r(13, 18, 15, 10, '#1a2030');
+    r(14, 32, 12, 2, '#f0f0f4'); r(14, 33, 12, 1, '#c8c8d0'); r(28, 32, 2, 2, '#f0f0f4');
+    // plante
+    const px = RW - 22;
+    r(px + 1, 50, 16, 3, 'rgba(20,10,10,.22)');
+    r(px + 3, 40, 12, 11, '#b8643a'); r(px + 12, 41, 3, 10, '#8e4a28'); r(px + 5, 42, 1, 7, '#d8885a');
+    r(px + 2, 38, 14, 3, '#d07a48'); r(px + 2, 38, 14, 1, '#e8a070'); r(px + 4, 39, 10, 1, '#4a3020');
+    for (const [dx, y, w, h] of [[0, 30, 8, 9], [9, 28, 9, 9], [4, 22, 9, 9], [1, 18, 7, 8], [10, 19, 7, 8], [6, 14, 6, 7]]) {
+      blob(c, px + dx, y + 1, w, h, '#2f6b34'); blob(c, px + dx, y, w, h - 1, '#4d9a45'); blob(c, px + dx + 1, y, w - 3, h - 4, '#7cc35e'); r(px + dx + 2, y + 1, 1, 1, '#b8e890');
+    }
+    // tapis
+    for (let y = 57; y < 80; y += 2) { r(44, y, 2, 1, '#efe6d0'); r(94, y, 2, 1, '#efe6d0'); }
+    r(46, 56, 48, 24, '#6e2632'); r(47, 57, 46, 22, '#a8414a'); r(49, 59, 42, 18, '#e0b56a'); r(50, 60, 40, 16, '#b84a52');
+    for (let x = 54; x < 90; x += 8) for (const y of [62, 71]) { r(x + 1, y, 1, 3, '#e8c47a'); r(x, y + 1, 3, 1, '#e8c47a'); }
+    r(65, 64, 10, 8, '#e8c47a'); r(66, 65, 8, 6, '#3a6a8a'); r(68, 66, 4, 4, '#e8c47a');
+    r(46, 80, 48, 1, 'rgba(0,0,0,.25)');
+    // bibliothèque
+    function shelf(bx, top, w) {
+      const h = 42 - top;
+      r(bx + 1, 42, w, 3, 'rgba(20,10,10,.25)');
+      r(bx, top, w, h, '#7e5130'); r(bx, top, w, 2, '#b07a48'); r(bx + w - 2, top, 2, h, '#5a3820'); r(bx + 2, top + 3, w - 5, h - 5, '#4e3020');
+      const BK = ['#d84848', '#4878d8', '#e8c040', '#48a858', '#8858c8', '#e08838', '#f0ece0'];
+      for (let sy = top + 3; sy + 9 <= top + h - 2; sy += 10) {
+        let x = bx + 2;
+        while (x < bx + w - 4) {
+          const bw = 2 + Math.floor(rnd() * 2), bh = 6 + Math.floor(rnd() * 3), col = BK[Math.floor(rnd() * BK.length)];
+          r(x, sy + 9 - bh, bw, bh, col); r(x, sy + 9 - bh, bw, 1, sh(col, .3)); r(x + bw - 1, sy + 9 - bh, 1, bh, sh(col, -.25));
+          x += bw;
+        }
+        r(bx + 2, sy + 9, w - 4, 1, '#a06c40');
+      }
+    }
+    if (kind === 'hub') { windowAt(42); shelf(76, 6, 24); }
+    else if (seed % 3 === 0) {
+      r(48, 8, 24, 16, '#9a7030'); r(49, 9, 22, 14, '#d8b060'); r(49, 9, 22, 1, '#f0d088');
+      r(51, 11, 18, 10, '#8cc8e8'); r(51, 16, 18, 5, '#5aa050'); r(54, 14, 6, 3, '#6ab060'); r(63, 12, 3, 2, '#f8f0c0');
+      r(49, 24, 22, 1, 'rgba(0,0,0,.18)');
+    } else if (seed % 3 === 1) windowAt(52);
+    else {
+      shelf(60, 14, 20);
+      r(88, 8, 10, 10, '#5a4030'); r(89, 9, 8, 8, '#f8f4ea'); r(90, 8, 6, 1, '#5a4030'); r(93, 10, 1, 4, '#303040'); r(93, 13, 3, 1, '#303040');
+    }
+    return cv;
+  }
+
+  // ---------- état ----------
+  const now = () => performance.now() / 1000;
+  let sessions = [], uid = 1, pending = [], fps = 8;
+  const NAMES = ['explore-api', 'refacto-ui', 'tests-e2e', 'doc-readme', 'fix-watcher', 'build-rust', 'audit-deps', 'sprites-16px', 'port-sse', 'bench-cpu'];
+  const QUESTIONS = [
+    'Je peux lancer <strong>npm install</strong> dans ce dossier ?',
+    'Deux pistes pour le watcher : <strong>notify</strong> ou sondage. Laquelle ?',
+    'J\'ai besoin d\'écrire dans <strong>src/themes/</strong>. J\'autorise ?',
+    'Le build casse sous Node 20. On passe en <strong>Node 22</strong> ?',
+  ];
+  const CLAUDE = { cap: '#d97757', shirt: '#f4f2ec', pants: '#4a4458', hair: '#5a3a28', coat: true };
+  const PALS = [
+    { cap: '#e24848', shirt: '#3a6fd0', pants: '#3a3f5c', hair: '#3a2a20' },
+    { cap: '#43a85a', shirt: '#f0c43a', pants: '#4a4050', hair: '#6a4020' },
+    { cap: '#8a5ad0', shirt: '#3ab0a6', pants: '#353a55', hair: '#202028' },
+    { cap: '#f08a2a', shirt: '#6e7088', pants: '#2e3248', hair: '#8a5a2a' },
+    { cap: '#e86aa8', shirt: '#2f4a86', pants: '#3a3040', hair: '#c08840' },
+    { cap: '#3a98e0', shirt: '#d85050', pants: '#2e3a4a', hair: '#4a2e1a' },
+  ];
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  const X0 = 38, X1 = RW - 42, Y0 = 30, Y1 = RH - 30, DESK = [14, 26];
+
+  const mkChar = () => ({ x: Math.round(rnd(X0, X1)), y: Math.round(rnd(Y0, Y1)), tx: 60, ty: 50, dir: 'down', dist: 0, wait: rnd(.3, 2) });
+  function addSession(name) {
+    const s = { id: uid++, name, rooms: [] };
+    s.rooms.push({ kind: 'hub', name, status: 'running', pal: CLAUDE, spr: atlas(CLAUDE), ch: mkChar(), born: now(), bg: bg('hub', uid) });
+    sessions.push(s); return s;
+  }
+  function addAgent(s) {
+    s = s || sessions.find(x => x.rooms.length < MAX_ROOMS);
+    if (!s || s.rooms.length >= MAX_ROOMS) return null;
+    const used = new Set(sessions.flatMap(x => x.rooms.map(r => r.name)));
+    const name = NAMES.find(n => !used.has(n)) || 'agent-' + uid;
+    const v = uid++, P = PALS[v % PALS.length];
+    const r = { kind: 'agent', name, status: 'running', pal: P, spr: atlas(P), ch: mkChar(), born: now(), bg: bg('agent', v), q: null, ended: 0 };
+    s.rooms.push(r); return r;
+  }
+  const agents = st => sessions.flatMap(s => s.rooms.filter(r => r.kind === 'agent' && (!st || r.status === st)).map(r => ({ s, r })));
+
+  // ---------- son ----------
+  let actx = null;
+  function beep() {
+    if (!document.getElementById('sound').checked) return;
+    try {
+      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+      if (actx.state !== 'running') return;
+      for (const [f, t] of [[1318.5, 0], [1975.5, .09], [1975.5, .2]]) {
+        const o = actx.createOscillator(), g = actx.createGain();
+        o.type = 'square'; o.frequency.value = f;
+        g.gain.setValueAtTime(.06, actx.currentTime + t); g.gain.exponentialRampToValueAtTime(.001, actx.currentTime + t + .08);
+        o.connect(g).connect(actx.destination); o.start(actx.currentTime + t); o.stop(actx.currentTime + t + .09);
+      }
+    } catch (e) {}
+  }
+  function unlockAudio() { try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); actx.resume(); } catch (e) {} }
+
+  // ---------- questions ----------
+  const popup = document.getElementById('popup');
+  const portrait = document.getElementById('portrait').getContext('2d');
+  function ask(target) {
+    const list = agents('running').filter(a => !a.r.q);
+    const t = target || (list.length ? pick(list) : null);
+    if (!t) return;
+    t.r.q = pick(QUESTIONS); pending.push(t);
+    if (pending.length === 1) showPopup();
+    beep();
+  }
+  function showPopup() {
+    const t = pending[0];
+    if (!t) { popup.hidden = true; return; }
+    portrait.clearRect(0, 0, 18, 26); portrait.drawImage(t.r.spr.down[0], 0, 0);
+    document.getElementById('qtext').innerHTML = `<strong>${t.r.name.toUpperCase()}</strong> · ${t.s.name}<br>${t.r.q}`;
+    popup.hidden = false; popup.style.animation = 'none'; void popup.offsetWidth; popup.style.animation = '';
+  }
+  function closeQ() { const t = pending.shift(); if (t) t.r.q = null; showPopup(); }
+  document.getElementById('qopen').onclick = closeQ;
+  document.getElementById('qlater').onclick = () => { if (pending.length > 1) pending.push(pending.shift()); else popup.hidden = true; showPopup(); };
+
+  // ---------- simulation ----------
+  const SPEED = 24;
+  function update(dt) {
+    const t = now();
+    for (const s of sessions) for (const r of s.rooms) {
+      const c = r.ch;
+      if (r.q || (r.kind === 'agent' && r.status !== 'running')) { c.dir = 'down'; c.wait = .5; continue; }
+      if (c.wait > 0) { c.wait -= dt; continue; }
+      const dx = c.tx - c.x, dy = c.ty - c.y, step = SPEED * dt;
+      if (Math.abs(dx) > .5) { const m = Math.sign(dx) * Math.min(Math.abs(dx), step); c.x += m; c.dist += Math.abs(m); c.dir = dx > 0 ? 'right' : 'left'; }
+      else if (Math.abs(dy) > .5) { const m = Math.sign(dy) * Math.min(Math.abs(dy), step); c.y += m; c.dist += Math.abs(m); c.dir = dy > 0 ? 'down' : 'up'; }
+      else {
+        if (c.tx === DESK[0] && c.ty === DESK[1]) c.dir = 'up';
+        c.wait = rnd(1, 3.5);
+        if (Math.random() < .35) { c.tx = DESK[0]; c.ty = DESK[1]; }
+        else { c.tx = Math.round(rnd(X0, X1)); c.ty = Math.round(rnd(Y0, Y1)); }
+      }
+    }
+    for (const s of sessions) s.rooms = s.rooms.filter(r => !(r.kind === 'agent' && r.status !== 'running' && t - r.ended > 25));
+  }
+
+  // ---------- rendu ----------
+  let lastW = 0, lastH = 0;
+  function fitView(w, h) {
+    const max = Math.max(220, Math.min(desk.clientWidth * .66, desk.clientWidth - 24));
+    const scale = Math.max(1, Math.min(3, Math.floor(max / w)));
+    let cw = w * scale; if (cw > desk.clientWidth - 24) cw = desk.clientWidth - 24;
+    view.width = w; view.height = h; view.style.width = cw + 'px'; view.style.height = (cw * h / w) + 'px';
+  }
+  function screen(r, s, x, y, t) {
+    const anyRun = agents('running').some(a => a.s === s);
+    const mode = r.kind === 'hub' ? (anyRun ? 'run' : 'idle') : (r.status === 'running' ? 'run' : r.status);
+    const C = { run: ['#143a6e', '#8fd0ff'], idle: ['#163a30', '#88e0b0'], done: ['#3a2e10', '#f8d050'], failed: ['#4a1010', '#ff7070'] }[mode];
+    R(ctx, x + 13, y + 18, 15, 10, C[0]);
+    if (mode === 'run' || mode === 'idle') {
+      const off = Math.floor(t * 4);
+      for (let i = 0; i < 4; i++) R(ctx, x + 14, y + 19 + i * 2, 3 + ((i + off) * 7) % 10, 1, C[1]);
+    } else if (mode === 'done') { R(ctx, x + 17, y + 23, 2, 2, C[1]); R(ctx, x + 19, y + 24, 2, 2, C[1]); R(ctx, x + 21, y + 22, 2, 2, C[1]); R(ctx, x + 23, y + 20, 2, 2, C[1]); }
+    else { for (let i = 0; i < 6; i++) { R(ctx, x + 17 + i, y + 20 + i, 2, 1, C[1]); R(ctx, x + 22 - i, y + 20 + i, 2, 1, C[1]); } }
+    R(ctx, x + 13, y + 18, 15, 1, 'rgba(255,255,255,.18)');
+  }
+  function draw() {
+    const w = Math.max(2, ...sessions.map(s => s.rooms.length)) * RW;
+    const h = Math.max(1, sessions.length) * (RH + GAP) - GAP;
+    if (w !== lastW || h !== lastH) { nat.width = w; nat.height = h; lastW = w; lastH = h; fitView(w, h); }
+    ctx.clearRect(0, 0, w, h);
+    const t = now(), blinkOn = Math.floor(t * 2) % 2 === 0;
+    ctx.font = '8px Silkscreen';
+    sessions.forEach((s, i) => {
+      const ry = i * (RH + GAP);
+      s.rooms.forEach((r, j) => { ctx.drawImage(r.bg, j * RW, ry); screen(r, s, j * RW, ry, t); });
+      s.rooms.forEach((r, j) => {
+        const rx = j * RW;
+        if (j < s.rooms.length - 1) {
+          R(ctx, rx + RW - 3, ry + 52, 6, 16, FLOOR); R(ctx, rx + RW - 3, ry + 52, 6, 1, '#8d5f38'); R(ctx, rx + RW - 3, ry + 57, 6, 1, '#8d5f38'); R(ctx, rx + RW - 3, ry + 63, 6, 1, '#8d5f38');
+          R(ctx, rx + RW - 3, ry + 48, 6, 4, '#2a2433'); R(ctx, rx + RW - 3, ry + 51, 6, 1, 'rgba(0,0,0,.35)');
+        }
+        const c = r.ch, still = c.wait > 0 || r.q || (r.kind === 'agent' && r.status !== 'running');
+        const f = still ? 0 : [1, 0, 2, 0][Math.floor(c.dist / 5) % 4];
+        const x = rx + Math.round(c.x) - 1, y = ry + Math.round(c.y) - 1 - (f ? 1 : 0), fy = ry + Math.round(c.y) + 21;
+        R(ctx, x + 4, fy, 10, 3, 'rgba(20,10,10,.28)'); R(ctx, x + 3, fy + 1, 12, 1, 'rgba(20,10,10,.28)');
+        ctx.drawImage(r.spr[c.dir][f], x, y);
+        if (r.q && blinkOn) ctx.drawImage(BUBBLE, x + 3, y - 15);
+        const label = r.kind === 'hub' ? 'CLAUDE · ' + s.name : r.name;
+        const tw = Math.ceil(ctx.measureText(label).width);
+        R(ctx, rx + 5, ry + RH - 14, tw + 7, 10, 'rgba(20,16,30,.78)'); R(ctx, rx + 5, ry + RH - 14, tw + 7, 1, 'rgba(255,255,255,.15)');
+        ctx.fillStyle = '#f8f0d8'; ctx.fillText(label, rx + 9, ry + RH - 6);
+        const age = t - r.born;
+        if (age < .6) R(ctx, rx, ry, RW, RH, `rgba(8,8,16,${1 - Math.floor(age / .15) * .25})`);
+      });
+    });
+    vctx.imageSmoothingEnabled = false; vctx.clearRect(0, 0, w, h); vctx.drawImage(nat, 0, 0);
+    document.getElementById('stat').textContent = `rendu natif ${w}×${h} px · ${fps} im/s · ${agents().length} agent(s)`;
+  }
+  let last = now();
+  function tick() {
+    const t = now(), dt = Math.min(.5, t - last); last = t;
+    if (!document.hidden) { update(dt); draw(); }
+    setTimeout(tick, 1000 / fps);
+  }
+
+  // ---------- démo ----------
+  function finish(st) { const l = agents('running').filter(a => !a.r.q); if (!l.length) return; const a = pick(l); a.r.status = st; a.r.ended = now(); }
+  function autoEvent() {
+    if (!document.getElementById('auto').checked || document.hidden) return;
+    const n = agents().length, x = Math.random();
+    if (x < .38 && n < 9) addAgent(pick(sessions.filter(s => s.rooms.length < MAX_ROOMS)) || null);
+    else if (x < .62) finish('done');
+    else if (x < .7) finish('failed');
+    else if (x < .84 && pending.length === 0) ask();
+    else if (x < .9 && sessions.length < 3) { const s = addSession(['MyLife', 'PokAgent', 'ClaudeIsles'].find(nm => !sessions.some(s => s.name === nm)) || 'Projet'); addAgent(s); }
+  }
+  document.getElementById('bAgent').onclick = () => addAgent();
+  document.getElementById('bSession').onclick = () => { if (sessions.length < 4) addSession(['MyLife', 'Cap', 'Notes', 'Projet'].find(nm => !sessions.some(s => s.name === nm)) || 'Projet'); };
+  document.getElementById('bDone').onclick = () => finish('done');
+  document.getElementById('bFail').onclick = () => finish('failed');
+  document.getElementById('bQ').onclick = () => { unlockAudio(); setTimeout(() => ask(), 30); };
+  document.addEventListener('pointerdown', unlockAudio, { once: true });
+  document.querySelectorAll('.seg button').forEach(b => b.onclick = () => {
+    fps = +b.dataset.fps; document.querySelectorAll('.seg button').forEach(o => o.setAttribute('aria-pressed', String(o === b)));
+  });
+  window.addEventListener('resize', () => { lastW = 0; });
+
+  const s1 = addSession('ClaudeIsles');
+  addAgent(s1); const d = addAgent(s1); d.status = 'done'; d.ended = now();
+  const s2 = addSession('PokAgent'); addAgent(s2);
+  for (const s of sessions) for (const r of s.rooms) r.born = -10;
+  const start = () => { tick(); setInterval(autoEvent, 3500); setTimeout(() => ask(agents('running')[0]), 2500); };
+  (document.fonts && document.fonts.load ? document.fonts.load('8px Silkscreen').catch(() => {}) : Promise.resolve()).then(start);
+})();
+</script>

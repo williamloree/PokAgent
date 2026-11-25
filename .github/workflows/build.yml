@@ -1,0 +1,61 @@
+# Compile PokAgent sous Windows à chaque push et pull request.
+# Sur main, si la version de Cargo.toml n'a pas encore de release, crée la
+# release vX.Y.Z avec pokagent.exe et son empreinte SHA-256 : les PokAgent
+# installés la récupèrent d'eux-mêmes (mise à jour automatique).
+name: Build et release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Tests
+        run: cargo test --release
+
+      - name: Compilation
+        run: cargo build --release
+
+      - name: Version et empreinte
+        id: v
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          "version=$version" >> $env:GITHUB_OUTPUT
+          Copy-Item target/release/pokagent.exe pokagent.exe
+          $hash = (Get-FileHash pokagent.exe -Algorithm SHA256).Hash.ToLower()
+          [IO.File]::WriteAllText("pokagent.exe.sha256", "$hash  pokagent.exe`n")
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pokagent-${{ steps.v.outputs.version }}
+          path: |
+            pokagent.exe
+            pokagent.exe.sha256
+
+      - name: Release (nouvelle version seulement)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v${{ steps.v.outputs.version }}"
+          if gh release view "$tag" > /dev/null 2>&1; then
+            echo "La release $tag existe déjà : rien à publier."
+          else
+            gh release create "$tag" pokagent.exe pokagent.exe.sha256 \
+              --target "$GITHUB_SHA" --title "PokAgent $tag" --generate-notes
+          fi
