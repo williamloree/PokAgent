@@ -6,6 +6,8 @@ mod autostart;
 mod gfx;
 mod hook;
 mod scene;
+#[cfg(test)]
+mod shots;
 mod sound;
 mod sprites;
 mod themes;
