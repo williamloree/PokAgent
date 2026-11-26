@@ -40,6 +40,20 @@ struct Room {
     looks: [Option<Look>; 3],
     w: Walker,
     born: f64,
+    focus: Option<isize>,
+}
+
+/// Une ligne de la liste des agents (menu de l'icône).
+pub struct RosterItem {
+    pub hub: bool,
+    pub name: String,
+    pub mode: Mode,
+    pub question: bool,
+    /// Tête et buste du personnage, pour reconnaître sa salle.
+    pub face: Canvas,
+    /// false si la salle est « hors cadre » (au-delà de 12).
+    pub shown: bool,
+    pub focus: Option<isize>,
 }
 
 pub struct Question {
@@ -53,7 +67,6 @@ pub struct Scene {
     pub theme: Theme,
     rooms: Vec<Room>,
     rng: Rng,
-    next_seed: u32,
     bubble: Canvas,
     pub question: Option<Question>,
 }
@@ -64,7 +77,7 @@ fn hash(s: &str) -> u32 {
 
 impl Scene {
     pub fn new(theme: Theme) -> Self {
-        Scene { theme, rooms: vec![], rng: Rng::new(12345), next_seed: 1, bubble: bubble(), question: None }
+        Scene { theme, rooms: vec![], rng: Rng::new(12345), bubble: bubble(), question: None }
     }
 
     fn walker(&mut self) -> Walker {
@@ -85,25 +98,26 @@ impl Scene {
                 Some(r) => r,
                 None => {
                     let w = self.walker();
-                    Room { key, hub: true, name: String::new(), mode: Mode::Idle, question: false, pal: claude_pal(), seed: hash(&s.id), looks: [None, None, None], w, born: t }
+                    Room { key, hub: true, name: String::new(), mode: Mode::Idle, question: false, pal: claude_pal(), seed: hash(&s.id), looks: [None, None, None], w, born: t, focus: None }
                 }
             };
             r.name = s.name.clone();
             let running = s.agents.iter().any(|a| a.status == St::Running);
             r.mode = if s.busy || running { Mode::Run } else { Mode::Idle };
             r.question = s.question.is_some();
+            r.focus = s.focus;
             rooms.push(r);
             for a in &s.agents {
                 let mut r = match take(&a.id) {
                     Some(r) => r,
                     None => {
-                        let seed = self.next_seed;
-                        self.next_seed += 1;
+                        let seed = hash(&a.id);
                         let w = self.walker();
-                        Room { key: a.id.clone(), hub: false, name: String::new(), mode: Mode::Run, question: false, pal: agent_pal(seed), seed, looks: [None, None, None], w, born: t }
+                        Room { key: a.id.clone(), hub: false, name: String::new(), mode: Mode::Run, question: false, pal: agent_pal(seed), seed, looks: [None, None, None], w, born: t, focus: None }
                     }
                 };
                 r.name = a.name.clone();
+                r.focus = s.focus;
                 r.mode = match a.status {
                     St::Running => Mode::Run,
                     St::Failed => Mode::Failed,
@@ -177,6 +191,34 @@ impl Scene {
                 }
             }
         }
+    }
+
+    /// Sessions et agents dans l'ordre des salles, avec la tête de chaque personnage.
+    pub fn roster(&mut self) -> Vec<RosterItem> {
+        let theme = self.theme;
+        let cap = (COLS * ROWS) as usize;
+        self.rooms
+            .iter_mut()
+            .enumerate()
+            .map(|(i, r)| {
+                let spr = &Self::look(theme, r).spr[DOWN][0];
+                let mut face = Canvas::new(spr.w, 18);
+                face.blit(spr, 0, 0);
+                RosterItem { hub: r.hub, name: r.name.clone(), mode: r.mode, question: r.question, face, shown: i < cap, focus: r.focus }
+            })
+            .collect()
+    }
+
+    /// Bilan court pour l'infobulle de l'icône.
+    pub fn summary(&self) -> String {
+        let sessions = self.rooms.iter().filter(|r| r.hub).count();
+        let running = self.rooms.iter().filter(|r| !r.hub && r.mode == Mode::Run).count();
+        let questions = self.rooms.iter().filter(|r| r.hub && r.question).count();
+        let mut s = format!("PokAgent · {sessions} session{} · {running} agent{} en cours", if sessions > 1 { "s" } else { "" }, if running > 1 { "s" } else { "" });
+        if questions > 0 {
+            s.push_str(&format!(" · {questions} question{}", if questions > 1 { "s" } else { "" }));
+        }
+        s
     }
 
     pub fn portrait(&mut self) -> Option<Canvas> {

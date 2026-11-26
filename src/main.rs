@@ -24,9 +24,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use themes::Theme;
+use themes::{Mode, Theme};
 use watcher::{Model, Watcher};
-use windows::core::{w, PCWSTR};
+use windows::core::{w, PCWSTR, PWSTR};
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::Media::Audio::{PlaySoundW, SND_ASYNC, SND_MEMORY, SND_NODEFAULT};
@@ -47,6 +47,7 @@ const ID_AUTOSTART: usize = 500;
 const ID_AUTOUPDATE: usize = 600;
 const ID_CHECK: usize = 601;
 const ID_QUIT: usize = 999;
+const ID_ROOM: usize = 1000;
 const UPDATE_EVERY: Duration = Duration::from_secs(6 * 3600);
 
 // ------------------------------------------------------------ réglages
@@ -203,6 +204,7 @@ struct App {
     last_t: f64,
     screen: (i32, i32),
     tray: NOTIFYICONDATAW,
+    tip: String,
     auto_update: Arc<AtomicBool>,
 }
 
@@ -251,6 +253,18 @@ impl App {
                 let m = m.clone();
                 self.scene.sync(&m, t);
             }
+        }
+        let tip = self.scene.summary();
+        if tip != self.tip {
+            self.tray.szTip = [0; 128];
+            for (i, c) in tip.encode_utf16().take(127).enumerate() {
+                self.tray.szTip[i] = c;
+            }
+            self.tray.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP;
+            unsafe {
+                let _ = Shell_NotifyIconW(NIM_MODIFY, &self.tray);
+            }
+            self.tip = tip;
         }
         unsafe {
             if fullscreen_app(self.screen.0, self.screen.1) {
@@ -306,17 +320,8 @@ impl App {
         if let Some(k) = self.popup_key.clone() {
             self.dismissed.insert(k);
         }
-        let focus = self.scene.question.as_ref().and_then(|q| q.focus);
-        if let Some(h) = focus {
-            unsafe {
-                let h = HWND(h as *mut _);
-                if IsWindow(h).as_bool() {
-                    if IsIconic(h).as_bool() {
-                        let _ = ShowWindow(h, SW_RESTORE);
-                    }
-                    let _ = SetForegroundWindow(h);
-                }
-            }
+        if let Some(h) = self.scene.question.as_ref().and_then(|q| q.focus) {
+            unsafe { focus_window(h) };
         }
     }
 
@@ -375,39 +380,95 @@ extern "system" fn popup_proc(h: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRES
 static mut TASKBAR_CREATED: u32 = 0;
 
 unsafe fn tray_menu(ctl: HWND) {
-    let Some((theme, fps, snd, upd, demo)) = with_app(|a| (a.cfg.theme, a.cfg.fps, a.cfg.sound, a.cfg.auto_update, a.demo.is_some())) else { return };
+    let Some((theme, fps, snd, upd, demo, roster)) =
+        with_app(|a| (a.cfg.theme, a.cfg.fps, a.cfg.sound, a.cfg.auto_update, a.demo.is_some(), a.scene.roster()))
+    else {
+        return;
+    };
     let auto = autostart::is_on();
     let Ok(menu) = CreatePopupMenu() else { return };
-    let item = |id: usize, text: &str, checked: bool| {
-        let t: Vec<u16> = text.encode_utf16().chain([0]).collect();
+    let Ok(themes_menu) = CreatePopupMenu() else { return };
+    let Ok(settings) = CreatePopupMenu() else { return };
+    let wide = |s: &str| -> Vec<u16> { s.encode_utf16().chain([0]).collect() };
+    let item = |m: HMENU, id: usize, text: &str, checked: bool| {
+        let t = wide(text);
         let flags = MF_STRING | if checked { MF_CHECKED } else { MF_UNCHECKED };
-        let _ = AppendMenuW(menu, flags, id, PCWSTR(t.as_ptr()));
+        let _ = AppendMenuW(m, flags, id, PCWSTR(t.as_ptr()));
     };
-    let title: Vec<u16> = format!("PokAgent v{}{}", updater::VERSION, if demo { " (démo)" } else { "" }).encode_utf16().chain([0]).collect();
+    let title = wide(&format!("PokAgent v{}{}", updater::VERSION, if demo { " (démo)" } else { "" }));
     let _ = AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, PCWSTR(title.as_ptr()));
     let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
+
+    // Qui est qui : une ligne par salle, avec la tête du personnage.
+    let mut bitmaps = vec![];
+    if roster.is_empty() {
+        let t = wide("Aucune session Claude Code active");
+        let _ = AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, PCWSTR(t.as_ptr()));
+    }
+    for (i, r) in roster.iter().enumerate() {
+        if r.hub && i > 0 {
+            let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
+        }
+        let status = match (r.hub, r.question, r.mode) {
+            (true, true, _) => "attend ta réponse",
+            (true, _, Mode::Run) => "au travail",
+            (true, _, _) => "au repos",
+            (false, _, Mode::Run) => "en cours",
+            (false, _, Mode::Done) => "terminé",
+            (false, _, _) => "échec",
+        };
+        let label = if r.hub { format!("CLAUDE · {}", r.name) } else { format!("   {}", r.name) };
+        let hidden = if r.shown { "" } else { " (hors cadre)" };
+        let mut text = wide(&format!("{label}{hidden}\t{status}"));
+        let bmp = menu_bitmap(&r.face, 2);
+        bitmaps.push(bmp);
+        let mii = MENUITEMINFOW {
+            cbSize: std::mem::size_of::<MENUITEMINFOW>() as u32,
+            fMask: MIIM_ID | MIIM_STRING | MIIM_BITMAP | MIIM_FTYPE,
+            fType: MFT_STRING,
+            wID: (ID_ROOM + i) as u32,
+            dwTypeData: PWSTR(text.as_mut_ptr()),
+            hbmpItem: bmp,
+            ..Default::default()
+        };
+        let _ = InsertMenuItemW(menu, u32::MAX, true, &mii);
+    }
+    let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
+
     for (i, th) in Theme::ALL.iter().enumerate() {
-        item(ID_THEME + i, th.label(), *th == theme);
+        item(themes_menu, ID_THEME + i, th.label(), *th == theme);
     }
-    let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
     for (i, f) in FPS.iter().enumerate() {
-        item(ID_FPS + i, &format!("{f} images par seconde"), *f == fps);
+        item(settings, ID_FPS + i, &format!("{f} images par seconde"), *f == fps);
     }
+    let _ = AppendMenuW(settings, MF_SEPARATOR, 0, None);
+    item(settings, ID_SOUND, "Son des questions", snd);
+    item(settings, ID_HOOK, "Installer le hook des questions…", false);
+    let _ = AppendMenuW(settings, MF_SEPARATOR, 0, None);
+    item(settings, ID_AUTOSTART, "Lancer avec Windows", auto);
+    item(settings, ID_AUTOUPDATE, "Mises à jour automatiques", upd);
+    item(settings, ID_CHECK, "Rechercher une mise à jour", false);
+    let (t1, t2) = (wide("Univers"), wide("Réglages"));
+    let _ = AppendMenuW(menu, MF_POPUP, themes_menu.0 as usize, PCWSTR(t1.as_ptr()));
+    let _ = AppendMenuW(menu, MF_POPUP, settings.0 as usize, PCWSTR(t2.as_ptr()));
     let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
-    item(ID_SOUND, "Son des questions", snd);
-    item(ID_HOOK, "Installer le hook des questions…", false);
-    let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
-    item(ID_AUTOSTART, "Lancer avec Windows", auto);
-    item(ID_AUTOUPDATE, "Mises à jour automatiques", upd);
-    item(ID_CHECK, "Rechercher une mise à jour", false);
-    let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
-    item(ID_QUIT, "Quitter PokAgent", false);
+    item(menu, ID_QUIT, "Quitter PokAgent", false);
+
     let mut pt = POINT::default();
     let _ = GetCursorPos(&mut pt);
     let _ = SetForegroundWindow(ctl);
     let cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY, pt.x, pt.y, 0, ctl, None).0 as usize;
-    let _ = DestroyMenu(menu);
+    let _ = DestroyMenu(menu); // détruit aussi les sous-menus
+    for b in bitmaps {
+        let _ = DeleteObject(b);
+    }
     match cmd {
+        c if c >= ID_ROOM && c < ID_ROOM + roster.len() => {
+            // ramène la fenêtre de la session, si le hook l'a fournie
+            if let Some(h) = roster[c - ID_ROOM].focus {
+                focus_window(h);
+            }
+        }
         c if (ID_THEME..ID_THEME + 3).contains(&c) => {
             with_app(|a| a.set_theme(Theme::ALL[c - ID_THEME]));
         }
@@ -460,6 +521,45 @@ unsafe fn tray_menu(ctl: HWND) {
     }
 }
 
+/// Image de menu (DIB 32 bits prémultiplié) à partir d'un sprite, agrandie ×scale.
+unsafe fn menu_bitmap(cv: &Canvas, scale: i32) -> HBITMAP {
+    let (w, h) = (cv.w * scale, cv.h * scale);
+    let bmi = BITMAPINFO {
+        bmiHeader: BITMAPINFOHEADER {
+            biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+            biWidth: w,
+            biHeight: -h,
+            biPlanes: 1,
+            biBitCount: 32,
+            biCompression: BI_RGB.0,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let mut bits = std::ptr::null_mut();
+    let Ok(bmp) = CreateDIBSection(None, &bmi, DIB_RGB_COLORS, &mut bits, None, 0) else { return HBITMAP::default() };
+    let px = std::slice::from_raw_parts_mut(bits as *mut u32, (w * h) as usize);
+    for y in 0..h {
+        for x in 0..w {
+            let c = cv.px[((y / scale) * cv.w + x / scale) as usize];
+            let a = c.3 as u32;
+            px[(y * w + x) as usize] = (a << 24) | ((c.0 as u32 * a / 255) << 16) | ((c.1 as u32 * a / 255) << 8) | (c.2 as u32 * a / 255);
+        }
+    }
+    bmp
+}
+
+/// Met une fenêtre au premier plan (en la restaurant si elle est réduite).
+unsafe fn focus_window(h: isize) {
+    let h = HWND(h as *mut _);
+    if IsWindow(h).as_bool() {
+        if IsIconic(h).as_bool() {
+            let _ = ShowWindow(h, SW_RESTORE);
+        }
+        let _ = SetForegroundWindow(h);
+    }
+}
+
 /// Relance l'exécutable (fraîchement mis à jour) puis quitte.
 unsafe fn restart() {
     let _ = CloseHandle(MUTEX);
@@ -476,6 +576,12 @@ unsafe fn add_tray(nid: &NOTIFYICONDATAW) {
 extern "system" fn ctl_proc(h: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
     unsafe {
         match msg {
+            WM_TIMER if wp.0 == 2 => {
+                // build debug, POKAGENT_OPEN_MENU : ouvre le menu pour le vérifier
+                let _ = KillTimer(h, 2);
+                tray_menu(h);
+                LRESULT(0)
+            }
             WM_TIMER => {
                 with_app(|a| a.tick());
                 LRESULT(0)
@@ -545,9 +651,11 @@ fn main() {
     unsafe {
         // Une seule instance. Juste après une mise à jour, l'ancienne instance
         // peut encore tenir le verrou un instant : on patiente un peu.
+        // La démo a son propre verrou : elle peut tourner à côté de la vraie instance.
+        let lock = if demo { w!("Local\\PokAgentDemo") } else { w!("Local\\PokAgentSingleton") };
         let mut tries = 0;
         loop {
-            match CreateMutexW(None, true, w!("Local\\PokAgentSingleton")) {
+            match CreateMutexW(None, true, lock) {
                 Ok(h) if GetLastError() != ERROR_ALREADY_EXISTS => {
                     MUTEX = h;
                     break;
@@ -623,7 +731,9 @@ fn main() {
             uID: 1,
             uFlags: NIF_ICON | NIF_MESSAGE | NIF_TIP,
             uCallbackMessage: WM_TRAY,
-            hIcon: LoadIconW(None, IDI_APPLICATION).unwrap_or_default(),
+            hIcon: LoadImageW(hinst, PCWSTR(1 as *const u16), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR)
+                .map(|h| HICON(h.0))
+                .unwrap_or_default(),
             ..Default::default()
         };
         for (i, c) in "PokAgent".encode_utf16().enumerate() {
@@ -694,12 +804,16 @@ fn main() {
             last_t: 0.0,
             screen: (sw, sh),
             tray,
+            tip: String::new(),
             auto_update,
             cfg,
         };
         let fps = app.cfg.fps;
         APP.with(|a| *a.borrow_mut() = Some(app));
         SetTimer(ctl, 1, 1000 / fps, None);
+        if cfg!(debug_assertions) && std::env::var_os("POKAGENT_OPEN_MENU").is_some() {
+            SetTimer(ctl, 2, 2500, None);
+        }
 
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).as_bool() {

@@ -57,6 +57,82 @@ fn png(w: u32, h: u32, rgba: &[u8]) -> Vec<u8> {
     out
 }
 
+/// Logo 16×16 (le même que assets/logo.svg).
+fn logo() -> Canvas {
+    use crate::gfx::hex;
+    let mut c = Canvas::new(16, 16);
+    c.blob(0, 0, 16, 16, hex("#2b2633"));
+    c.fill(1, 1, 14, 14, hex("#2b2633"));
+    for (x, y, w, h, col) in [
+        (5, 3, 6, 1, "#d97757"),
+        (4, 4, 8, 2, "#d97757"),
+        (7, 4, 2, 1, "#ffffff"),
+        (4, 6, 8, 1, "#a8553a"),
+        (4, 7, 8, 4, "#f6c9a0"),
+        (4, 7, 1, 2, "#5a3a28"),
+        (11, 7, 1, 2, "#5a3a28"),
+        (6, 8, 1, 2, "#2a2a38"),
+        (9, 8, 1, 2, "#2a2a38"),
+        (5, 11, 6, 3, "#f4f2ec"),
+        (7, 11, 2, 3, "#d97757"),
+        (12, 1, 3, 6, "#ffffff"),
+        (13, 2, 1, 2, "#e83838"),
+        (13, 5, 1, 1, "#e83838"),
+    ] {
+        c.fill(x, y, w, h, hex(col));
+    }
+    c
+}
+
+/// Icône Windows (entrées PNG) : cargo test icon -- --ignored  ->  assets/pokagent.ico
+#[test]
+#[ignore]
+fn icon() {
+    let src = logo();
+    let sizes = [16u32, 20, 24, 32, 40, 48, 64];
+    let images: Vec<Vec<u8>> = sizes
+        .iter()
+        .map(|&s| {
+            let n = s as usize;
+            let mut px = vec![0u8; n * n * 4];
+            for y in 0..n {
+                for x in 0..n {
+                    let c = src.px[(y * 16 / n) * 16 + x * 16 / n];
+                    // BMP : lignes de bas en haut, ordre BGRA
+                    px[((n - 1 - y) * n + x) * 4..][..4].copy_from_slice(&[c.2, c.1, c.0, c.3]);
+                }
+            }
+            let mut bmp = Vec::new();
+            for v in [40u32, s, s * 2] {
+                bmp.extend_from_slice(&v.to_le_bytes());
+            }
+            bmp.extend_from_slice(&1u16.to_le_bytes());
+            bmp.extend_from_slice(&32u16.to_le_bytes());
+            bmp.extend_from_slice(&[0u8; 24]);
+            bmp.extend_from_slice(&px);
+            // masque ET (1 bit par pixel, lignes alignées sur 4 octets) : vide, l'alpha suffit
+            let mask_row = n.div_ceil(32) * 4;
+            bmp.extend(std::iter::repeat_n(0u8, mask_row * n));
+            bmp
+        })
+        .collect();
+    let mut ico = vec![0, 0, 1, 0];
+    ico.extend_from_slice(&(sizes.len() as u16).to_le_bytes());
+    let mut offset = 6 + 16 * sizes.len() as u32;
+    for (s, img) in sizes.iter().zip(&images) {
+        let b = if *s >= 256 { 0 } else { *s as u8 };
+        ico.extend_from_slice(&[b, b, 0, 0, 1, 0, 32, 0]);
+        ico.extend_from_slice(&(img.len() as u32).to_le_bytes());
+        ico.extend_from_slice(&offset.to_le_bytes());
+        offset += img.len() as u32;
+    }
+    for img in &images {
+        ico.extend_from_slice(img);
+    }
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets").join("pokagent.ico");
+    std::fs::write(path, ico).unwrap();
+}
+
 fn model() -> Vec<MSession> {
     let a = |id: &str, name: &str, st: St| MAgent { id: id.into(), name: name.into(), status: st, started: 0.0 };
     let s = |id: &str, name: &str, q: Option<&str>, agents: Vec<MAgent>| MSession {

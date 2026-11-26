@@ -80,7 +80,7 @@ impl Theme {
     }
     pub fn character(self, p: &Pal, dir: usize, f: usize) -> Canvas {
         match self {
-            Theme::Labo => human(p, dir, f, Hw::Cap),
+            Theme::Labo => human(p, dir, f, Hw::Own),
             Theme::Village => animal(p, dir, f),
             Theme::Donjon => human(p, dir, f, if p.claude { Hw::Hood } else { Hw::Helm }),
         }
@@ -103,17 +103,17 @@ impl Theme {
     pub fn door(self, c: &mut Canvas, x: i32, y: i32) {
         match self {
             Theme::Labo => {
-                let (f, l) = (hex(FLOOR), hex("#8d5f38"));
-                c.fill(x - 3, y + 50, 6, 16, f);
-                for yy in [50, 56, 62] {
-                    c.fill(x - 3, y + yy, 6, 1, l);
+                // paillasson : les deux salles n'ont pas forcément le même parquet
+                c.fill(x - 3, y + 50, 6, 16, hex("#7a5a3e"));
+                for yy in [52, 55, 58, 61, 64] {
+                    c.fill(x - 3, y + yy, 6, 1, hex("#5e4430"));
                 }
                 c.fill(x - 3, y + 46, 6, 4, hex("#2a2433"));
                 c.fill(x - 3, y + 49, 6, 1, rgba(0, 0, 0, 0.35));
             }
             Theme::Village => {}
             Theme::Donjon => {
-                c.fill(x - 4, y + 48, 8, 18, hex(SLAB));
+                c.fill(x - 4, y + 48, 8, 18, hex("#3a3848"));
                 c.fill(x - 4, y + 48, 8, 1, hex("#1e1c26"));
                 c.fill(x - 4, y + 46, 8, 2, hex("#1e1c26"));
             }
@@ -122,13 +122,28 @@ impl Theme {
 }
 
 // ---------------------------------------------------------------- Labo
-const FLOOR: &str = "#c9935c";
+const WALLS: [&str; 9] = ["#e9e2cf", "#dde6dc", "#ebdccb", "#dce2ee", "#f0d8d0", "#e4dcf0", "#d8e8e8", "#f0e6c4", "#e0d0c0"];
+const FLOORS: [&str; 5] = ["#c9935c", "#b07a4a", "#d8b07a", "#9a8a7a", "#a8684a"];
+// tapis : bordure sombre, fond, liseré, cœur, motif, médaillon
+const RUGS: [[&str; 6]; 6] = [
+    ["#6e2632", "#a8414a", "#e0b56a", "#b84a52", "#e8c47a", "#3a6a8a"],
+    ["#22345e", "#3a5a9a", "#e0c890", "#4a6ab0", "#f0e0b0", "#c84848"],
+    ["#2a4a2e", "#3e7a48", "#e8d8a0", "#4e8a56", "#f0e8c0", "#c87830"],
+    ["#3e2a5a", "#6a4a90", "#e8c8e0", "#7a5aa0", "#f0d8f0", "#e0b040"],
+    ["#1e4a4a", "#2e7a78", "#f0d8a8", "#3a8a88", "#f8e8c8", "#d06048"],
+    ["#5a4a30", "#8a7450", "#f0e0c0", "#9a8460", "#fff0d0", "#4a6a8a"],
+];
 
 fn labo_bg(hub: bool, seed: u32) -> Canvas {
     let mut c = Canvas::new(RW, RH);
     let mut rnd = Rng::new(seed.wrapping_mul(7919).wrapping_add(13));
-    let walls = ["#e9e2cf", "#dde6dc", "#ebdccb", "#dce2ee"];
-    let wall = hex(if hub { walls[0] } else { walls[1 + (seed % 3) as usize] });
+    let mut pick = Rng::new(seed.wrapping_mul(2246822519).wrapping_add(3));
+    pick.f();
+    let wall = hex(WALLS[pick.i(WALLS.len() as i32) as usize]);
+    let floor = hex(FLOORS[pick.i(FLOORS.len() as i32) as usize]);
+    let rug = RUGS[pick.i(RUGS.len() as i32) as usize].map(hex);
+    let decor = pick.i(4);
+    let cactus = pick.i(3) == 0;
     c.fill(0, 0, RW, RH, hex("#1c1822"));
     // papier peint
     c.fill(3, 4, RW - 6, 22, wall);
@@ -161,13 +176,13 @@ fn labo_bg(hub: bool, seed: u32) -> Canvas {
     c.fill(3, 33, RW - 6, 2, hex("#5e4030"));
     // parquet en lames (dessiné à part puis recopié dans la zone du sol)
     let mut fl = Canvas::new(RW, RH);
-    let gap = hex("#8d5f38");
+    let gap = floor.sh(-0.35);
     let mut y = 35;
     while y < RH - 3 {
         let mut x = 3 - rnd.i(30);
         while x < RW - 3 {
             let len = 22 + rnd.i(22);
-            let col = hex(FLOOR).sh((rnd.f() - 0.5) * 0.14);
+            let col = floor.sh((rnd.f() - 0.5) * 0.14);
             fl.fill(x, y, len, 5, col);
             fl.fill(x, y, len, 1, col.sh(0.14));
             fl.fill(x, y + 5, len, 1, gap);
@@ -247,20 +262,33 @@ fn labo_bg(hub: bool, seed: u32) -> Canvas {
     c.fill(14, 32, 12, 2, hex("#f0f0f4"));
     c.fill(14, 33, 12, 1, hex("#c8c8d0"));
     c.fill(28, 32, 2, 2, hex("#f0f0f4"));
-    // plante
+    // plante (ou cactus)
     let px = RW - 22;
+    let pot = hex(["#b8643a", "#4a7ab8", "#e8e0d0", "#6a8a4a"][(seed % 4) as usize]);
     c.fill(px + 1, 50, 16, 3, rgba(20, 10, 10, 0.22));
-    c.fill(px + 3, 40, 12, 11, hex("#b8643a"));
-    c.fill(px + 12, 41, 3, 10, hex("#8e4a28"));
-    c.fill(px + 5, 42, 1, 7, hex("#d8885a"));
-    c.fill(px + 2, 38, 14, 3, hex("#d07a48"));
-    c.fill(px + 2, 38, 14, 1, hex("#e8a070"));
+    c.fill(px + 3, 40, 12, 11, pot);
+    c.fill(px + 12, 41, 3, 10, pot.sh(-0.25));
+    c.fill(px + 5, 42, 1, 7, pot.sh(0.2));
+    c.fill(px + 2, 38, 14, 3, pot.sh(0.1));
+    c.fill(px + 2, 38, 14, 1, pot.sh(0.3));
     c.fill(px + 4, 39, 10, 1, hex("#4a3020"));
-    for (dx, y, w, h) in [(0, 30, 8, 9), (9, 28, 9, 9), (4, 22, 9, 9), (1, 18, 7, 8), (10, 19, 7, 8), (6, 14, 6, 7)] {
-        c.blob(px + dx, y + 1, w, h, hex("#2f6b34"));
-        c.blob(px + dx, y, w, h - 1, hex("#4d9a45"));
-        c.blob(px + dx + 1, y, w - 3, h - 4, hex("#7cc35e"));
-        c.fill(px + dx + 2, y + 1, 1, 1, hex("#b8e890"));
+    if cactus {
+        let (g, gd, gl) = (hex("#5a9a50"), hex("#3a6a38"), hex("#8ac878"));
+        c.blob(px + 6, 16, 6, 23, gd);
+        c.blob(px + 6, 15, 6, 23, g);
+        c.fill(px + 7, 17, 1, 20, gl);
+        c.blob(px + 1, 24, 4, 8, g);
+        c.fill(px + 3, 30, 4, 2, g);
+        c.blob(px + 13, 21, 4, 8, g);
+        c.fill(px + 11, 26, 3, 2, g);
+        c.fill(px + 8, 13, 2, 2, hex("#f070a0"));
+    } else {
+        for (dx, y, w, h) in [(0, 30, 8, 9), (9, 28, 9, 9), (4, 22, 9, 9), (1, 18, 7, 8), (10, 19, 7, 8), (6, 14, 6, 7)] {
+            c.blob(px + dx, y + 1, w, h, hex("#2f6b34"));
+            c.blob(px + dx, y, w, h - 1, hex("#4d9a45"));
+            c.blob(px + dx + 1, y, w - 3, h - 4, hex("#7cc35e"));
+            c.fill(px + dx + 2, y + 1, 1, 1, hex("#b8e890"));
+        }
     }
     // tapis
     let (rx, ry, rw, rh) = (42, 52, 46, 22);
@@ -270,11 +298,11 @@ fn labo_bg(hub: bool, seed: u32) -> Canvas {
         c.fill(rx + rw, y, 2, 1, hex("#efe6d0"));
         y += 2;
     }
-    c.fill(rx, ry, rw, rh, hex("#6e2632"));
-    c.fill(rx + 1, ry + 1, rw - 2, rh - 2, hex("#a8414a"));
-    c.fill(rx + 3, ry + 3, rw - 6, rh - 6, hex("#e0b56a"));
-    c.fill(rx + 4, ry + 4, rw - 8, rh - 8, hex("#b84a52"));
-    let gold = hex("#e8c47a");
+    c.fill(rx, ry, rw, rh, rug[0]);
+    c.fill(rx + 1, ry + 1, rw - 2, rh - 2, rug[1]);
+    c.fill(rx + 3, ry + 3, rw - 6, rh - 6, rug[2]);
+    c.fill(rx + 4, ry + 4, rw - 8, rh - 8, rug[3]);
+    let gold = rug[4];
     let mut x = rx + 7;
     while x < rx + rw - 6 {
         for y in [ry + 6, ry + rh - 9] {
@@ -285,7 +313,7 @@ fn labo_bg(hub: bool, seed: u32) -> Canvas {
     }
     let (mx, my) = (rx + rw / 2 - 5, ry + rh / 2 - 4);
     c.fill(mx, my, 10, 8, gold);
-    c.fill(mx + 1, my + 1, 8, 6, hex("#3a6a8a"));
+    c.fill(mx + 1, my + 1, 8, 6, rug[5]);
     c.fill(mx + 3, my + 2, 4, 4, gold);
     c.fill(rx, ry + rh, rw, 1, rgba(0, 0, 0, 0.25));
 
@@ -316,7 +344,20 @@ fn labo_bg(hub: bool, seed: u32) -> Canvas {
     if hub {
         window_at(&mut c, 42);
         shelf(&mut c, 74, 6, 22);
-    } else if seed % 3 == 0 {
+    } else if decor == 3 {
+        // télévision sur un meuble bas
+        c.fill(47, 43, 26, 3, rgba(20, 10, 10, 0.25));
+        c.fill(46, 30, 28, 13, hex("#7e5130"));
+        c.fill(46, 30, 28, 2, hex("#b07a48"));
+        c.fill(48, 34, 11, 7, hex("#5a3820"));
+        c.fill(61, 34, 11, 7, hex("#5a3820"));
+        c.fill(49, 12, 22, 17, hex("#2a2a34"));
+        c.fill(51, 14, 18, 12, hex("#3a6aa0"));
+        c.fill(52, 15, 6, 2, hex("#a8d0f0"));
+        c.fill(58, 29, 4, 1, hex("#2a2a34"));
+        c.fill(66, 8, 1, 4, hex("#2a2a34"));
+        c.fill(68, 6, 1, 6, hex("#2a2a34"));
+    } else if decor == 0 {
         c.fill(46, 8, 24, 16, hex("#9a7030"));
         c.fill(47, 9, 22, 14, hex("#d8b060"));
         c.fill(47, 9, 22, 1, hex("#f0d088"));
@@ -325,7 +366,7 @@ fn labo_bg(hub: bool, seed: u32) -> Canvas {
         c.fill(52, 14, 6, 3, hex("#6ab060"));
         c.fill(61, 12, 3, 2, hex("#f8f0c0"));
         c.fill(47, 24, 22, 1, rgba(0, 0, 0, 0.18));
-    } else if seed % 3 == 1 {
+    } else if decor == 1 {
         window_at(&mut c, 50);
     } else {
         shelf(&mut c, 56, 14, 20);
@@ -442,13 +483,27 @@ fn village_bg(hub: bool, seed: u32, p: &Pal) -> Canvas {
         c.fill(x + 1, y, 1, 3, col);
         c.fill(x + 1, y + 1, 1, 1, hex("#f8c020"));
     }
+    // mare
+    let mut pick = Rng::new(seed.wrapping_mul(3266489917).wrapping_add(11));
+    pick.f();
+    let facade = hex(["#f4ead2", "#dceaf4", "#f6dce0", "#dcf0e0", "#e8e0f4", "#f8e8c8"][pick.i(6) as usize]);
+    let tree = pick.i(4);
+    if !hub && pick.i(3) == 0 {
+        let (px, py) = (78, 66);
+        c.blob(px - 1, py - 1, 30, 14, hex("#6a9a50"));
+        c.blob(px, py, 28, 12, hex("#4a90c8"));
+        c.blob(px + 2, py + 2, 24, 8, hex("#5aa8e0"));
+        c.fill(px + 5, py + 3, 6, 1, hex("#bfe4f8"));
+        c.fill(px + 16, py + 6, 4, 1, hex("#bfe4f8"));
+        c.blob(px + 19, py + 2, 5, 3, hex("#4aa040"));
+    }
     // maison
     let (x0, w) = if hub { (24, 56) } else { (30, 42) };
     let roof = if hub { hex("#d97757") } else { p.cap };
     let dx = x0 + w / 2 - 4;
     c.fill(x0 + 2, 36, w - 4, 2, rgba(30, 60, 20, 0.3));
-    c.fill(x0 + 2, 20, w - 4, 16, hex("#f4ead2"));
-    c.fill(x0 + w - 6, 20, 4, 16, hex("#dccfae"));
+    c.fill(x0 + 2, 20, w - 4, 16, facade);
+    c.fill(x0 + w - 6, 20, 4, 16, facade.sh(-0.12));
     c.fill(x0 + 2, 35, w - 4, 1, hex("#b8a888"));
     for i in 0..16 {
         let inset = (8 - i / 2).max(0);
@@ -496,14 +551,40 @@ fn village_bg(hub: bool, seed: u32, p: &Pal) -> Canvas {
         c.fill(94, 41, 18, 3, rgba(30, 60, 20, 0.3));
         c.fill(100, 30, 5, 11, hex("#8a5a3a"));
         c.fill(103, 30, 2, 11, hex("#6a4228"));
-        c.blob(92, 10, 22, 21, hex("#3f8a3a"));
-        c.blob(93, 9, 20, 19, hex("#5aa848"));
-        c.blob(95, 10, 12, 10, hex("#7cc35e"));
-        c.fill(97, 11, 2, 1, hex("#b4e486"));
-        let fruit = hex(["#e84040", "#f8a030", "#f8c8c8", "#e8d040"][(seed % 4) as usize]);
-        for (fx, fy) in [(96, 18), (104, 14), (108, 22), (99, 25)] {
-            c.fill(fx, fy, 2, 2, fruit);
-            c.fill(fx, fy, 1, 1, hex("#ffffff"));
+        if tree == 3 {
+            // sapin
+            for i in 0..26 {
+                let half = 2 + i * 9 / 26;
+                c.fill(102 - half, 6 + i, half * 2 + 1, 1, if i % 6 == 5 { hex("#1e5a34") } else { hex("#2e7a44") });
+                c.fill(102 - half, 6 + i, 2, 1, hex("#4a9a5a"));
+            }
+        } else {
+            // pommier, cerisier en fleurs ou arbre d'automne
+            let [d, m, l, hi] = [
+                ["#3f8a3a", "#5aa848", "#7cc35e", "#b4e486"],
+                ["#c86890", "#e890b0", "#f8b8d0", "#fff0f6"],
+                ["#b05a20", "#e08030", "#f0a848", "#f8d080"],
+            ][tree as usize]
+                .map(hex);
+            c.blob(92, 10, 22, 21, d);
+            c.blob(93, 9, 20, 19, m);
+            c.blob(95, 10, 12, 10, l);
+            c.fill(97, 11, 2, 1, hi);
+            if tree == 0 {
+                let fruit = hex(["#e84040", "#f8a030", "#f8c8c8", "#e8d040"][(seed % 4) as usize]);
+                for (fx, fy) in [(96, 18), (104, 14), (108, 22), (99, 25)] {
+                    c.fill(fx, fy, 2, 2, fruit);
+                    c.fill(fx, fy, 1, 1, hex("#ffffff"));
+                }
+            } else if tree == 1 {
+                for (fx, fy) in [(94, 34), (110, 38), (88, 40)] {
+                    c.fill(fx, fy, 2, 1, hex("#f8b8d0"));
+                }
+            } else {
+                for (fx, fy) in [(92, 36), (109, 39), (98, 44)] {
+                    c.fill(fx, fy, 2, 1, hex("#e08030"));
+                }
+            }
         }
     }
     c
@@ -529,17 +610,22 @@ fn village_status(c: &mut Canvas, m: Mode, x: i32, y: i32, t: f64, hub: bool) {
 }
 
 // ---------------------------------------------------------------- Donjon
-const SLAB: &str = "#4a4a5c";
 
 fn donjon_bg(hub: bool, seed: u32, p: &Pal) -> Canvas {
     let mut c = Canvas::new(RW, RH);
     let mut rnd = Rng::new(seed.wrapping_mul(15485863).wrapping_add(3));
+    let mut pick = Rng::new(seed.wrapping_mul(374761393).wrapping_add(5));
+    pick.f();
+    // pierre bleutée, grès, pierre moussue, pierre violette
+    let stone = hex(["#5a5a72", "#7a6a52", "#506a5a", "#5e4a6e"][pick.i(4) as usize]);
+    let slab = stone.sh(-0.15);
+    let runner = if hub { None } else { [None, Some("#7a2030"), Some("#203a7a"), Some("#2a5a30")][pick.i(4) as usize].map(hex) };
     c.fill(0, 0, RW, RH, hex("#2e2c3a"));
     let (mut row, mut y) = (0, 6);
     while y < 34 {
         let mut x = if row % 2 == 1 { -6 } else { 0 };
         while x < RW {
-            let col = hex("#5a5a72").sh((rnd.f() - 0.5) * 0.18);
+            let col = stone.sh((rnd.f() - 0.5) * 0.18);
             c.fill(x + 1, y + 1, 11, 5, col);
             c.fill(x + 1, y + 1, 11, 1, col.sh(0.15));
             x += 12;
@@ -555,7 +641,7 @@ fn donjon_bg(hub: bool, seed: u32, p: &Pal) -> Canvas {
     while y < RH {
         let mut x = if row % 2 == 1 { -6 } else { 0 };
         while x < RW {
-            let col = hex(SLAB).sh((rnd.f() - 0.5) * 0.16);
+            let col = slab.sh((rnd.f() - 0.5) * 0.16);
             c.fill(x + 1, y + 1, 11, 9, col);
             c.fill(x + 1, y + 1, 11, 1, col.sh(0.14));
             if rnd.f() < 0.18 {
@@ -573,6 +659,18 @@ fn donjon_bg(hub: bool, seed: u32, p: &Pal) -> Canvas {
         }
         row += 1;
         y += 10;
+    }
+    if let Some(rc) = runner {
+        let gold = hex("#c8a050");
+        c.fill(58, 35, 24, RH - 38, rc.sh(-0.3));
+        c.fill(59, 35, 22, RH - 38, rc);
+        c.fill(61, 35, 1, RH - 38, gold);
+        c.fill(78, 35, 1, RH - 38, gold);
+        let mut y = 40;
+        while y < RH - 6 {
+            c.fill(69, y, 2, 2, gold);
+            y += 8;
+        }
     }
     c.grad_v(0, 35, RW, 7, 35.0, 42.0, rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0.0));
     for tx in [14, RW - 22] {

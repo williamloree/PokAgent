@@ -18,7 +18,7 @@
 
 PokAgent lit en continu les journaux que Claude Code écrit déjà sur le disque et les met en scène dans le quart haut-gauche de ton écran principal, sous toutes tes fenêtres, juste au-dessus du fond d'écran. Quand une session attend ta réponse, son Claude passe au premier plan en bas à droite, avec un petit jingle.
 
-Un seul exécutable de 750 Ko, en Rust, sans navigateur ni GPU : le dessin se fait sur le CPU en 480×270 pixels, agrandi ×2.
+Un seul exécutable de moins de 800 Ko, en Rust, sans navigateur ni GPU : le dessin se fait sur le CPU en 480×270 pixels, agrandi ×2.
 
 ## Installer
 
@@ -58,20 +58,36 @@ Trois univers, au choix dans le menu de l'icône. Ils racontent la même chose a
 |---|---|---|
 | ![Univers Labo](assets/screenshots/labo.png) <br> **Labo** <br> Dresseurs de monstres de poche, intérieur façon DS. Le statut s'affiche sur l'écran du PC. | ![Univers Village](assets/screenshots/village.png) <br> **Village** <br> Une maison par agent sur une île, habitants animaux, Claude en renard. Le statut est sur le drapeau de la boîte aux lettres. | ![Univers Donjon](assets/screenshots/donjon.png) <br> **Donjon** <br> Aventure vue de dessus : chevaliers, Claude en mage. Le statut est dans la couleur des torches ; le coffre s'ouvre quand l'agent a fini. |
 
+Chaque agent a sa propre apparence, tirée de son identifiant : il la garde d'un lancement à l'autre. Elle change selon l'univers :
+
+- **Labo** : couleur de peau, coiffure (courte, longue, en pointes), casquette, bonnet, bandana ou tête nue, lunettes, écharpe, couleurs des vêtements.
+- **Village** : espèce et pelage, oreilles rondes, pointues, longues ou tombantes, lunettes, écharpe.
+- **Donjon** : casque en acier, en or, en fer sombre ou en cuivre, plumet et tunique de couleur.
+
+Chaque salle a aussi son propre décor. Au Labo : murs, parquet, tapis, télévision, tableau ou bibliothèque, plante verte ou cactus. Au Village : façade, arbre (pommier, cerisier en fleurs, arbre d'automne, sapin), parfois une mare. Au Donjon : grès, pierre bleutée, moussue ou violette, et un tapis de couloir.
+
 Les dessins sont originaux, dans l'esprit de ces genres de jeux.
 
-## Menu de l'icône
+## Qui est qui : le menu de l'icône
 
-Clic sur l'icône PokAgent dans la zone de notification :
+<img align="right" src="assets/screenshots/menu.png" width="300" alt="Menu de l'icône : chaque session Claude suivie de ses agents, avec la tête du personnage, son nom et son statut (au travail, en cours, terminé, attend ta réponse).">
+
+Un clic sur l'icône PokAgent, dans la zone de notification à côté de l'horloge, ouvre la liste de toutes les salles. Chaque ligne montre **la tête du personnage**, le nom de l'agent et son statut. C'est la même apparence que dans la scène, ce qui permet de savoir qui est qui. Une salle au-delà de la douzième est marquée « (hors cadre) ».
+
+Un clic sur une ligne ramène la fenêtre de la session, si le hook l'a fournie. L'infobulle de l'icône résume l'activité : sessions, agents en cours, questions en attente.
+
+Sous la liste :
 
 | Entrée | Effet |
 |---|---|
-| Labo / Village / Donjon | Change d'univers, tout de suite. |
-| 2, 8 ou 20 images par seconde | 8 par défaut. 2 suffit pour un fond d'écran très calme. |
-| Son des questions | Jingle 8 bits quand une question arrive. |
-| Installer le hook des questions… | Voir plus bas. |
-| Lancer avec Windows | Activé au premier lancement. |
-| Mises à jour automatiques / Rechercher une mise à jour | Voir plus bas. |
+| Univers › Labo / Village / Donjon | Change d'univers, tout de suite. |
+| Réglages › 2, 8 ou 20 images par seconde | 8 par défaut. 2 suffit pour un fond d'écran très calme. |
+| Réglages › Son des questions | Jingle 8 bits quand une question arrive. |
+| Réglages › Installer le hook des questions… | Voir plus bas. |
+| Réglages › Lancer avec Windows | Activé au premier lancement. |
+| Réglages › Mises à jour automatiques / Rechercher une mise à jour | Voir plus bas. |
+
+<br clear="right">
 
 Les réglages sont dans `%APPDATA%\PokAgent\config.json`.
 
@@ -103,7 +119,7 @@ Pour publier une version : augmenter `version` dans `Cargo.toml` et pousser sur 
 
 - Les sessions modifiées dans les 15 dernières minutes sont affichées ; au démarrage, les journaux des 3 dernières heures sont relus.
 - Seuls les pixels qui changent d'une image à l'autre sont renvoyés à Windows.
-- `cargo test shots -- --ignored` régénère les captures de ce README avec le vrai moteur de rendu.
+- `cargo test shots -- --ignored` régénère les captures de ce README avec le vrai moteur de rendu, ainsi que l'icône `assets/pokagent.ico`, embarquée dans l'exécutable via `pokagent.rc`.
 
 ## Ce que ça coûte
 
