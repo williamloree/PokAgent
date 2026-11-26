@@ -197,3 +197,22 @@ pub fn run_statusline() {
         println!("{own}");
     }
 }
+
+pub const UW: i32 = 340; // panneau bas-gauche, pixels natifs
+pub const UH: i32 = 90;
+
+/// Panneau du bas-gauche : un titre et les lignes du rapport, calé en bas.
+pub fn draw(cv: &mut crate::gfx::Canvas, lines: &[String]) {
+    use crate::gfx::{fit, hex};
+    use embedded_graphics::mono_font::iso_8859_1::FONT_6X10;
+    cv.clear();
+    let h = 16 + lines.len() as i32 * 11;
+    let y0 = UH - h;
+    cv.fill(0, y0, UW, h, hex("#1c1a24").a(210));
+    cv.text(6, y0 + 4, "LIMITES CLAUDE", hex("#f0c860"), &FONT_6X10);
+    for (i, l) in lines.iter().enumerate() {
+        // police ISO-8859-1 : pas de flèche ni de ≈
+        let l = l.replace('→', "->").replace('≈', "~");
+        cv.text(6, y0 + 15 + i as i32 * 11, &fit(&l, UW - 12, &FONT_6X10), hex("#ece2c8"), &FONT_6X10);
+    }
+}

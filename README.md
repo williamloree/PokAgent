@@ -33,7 +33,7 @@ C'est tout. Au premier lancement, PokAgent s'inscrit pour démarrer avec Windows
 | Démonstration (données fictives, rien n'est écrit) | `pokagent.exe --demo` |
 | Mise à jour à la demande | `pokagent.exe update` |
 | Ajouter le hook des questions à Claude Code | `pokagent.exe install-hook` |
-| Brancher le calculateur de limites (5 h / semaine) sur la statusline | `pokagent.exe install-statusline` |
+| Brancher le calculateur de limites (5 h / semaine, affiché en bas à gauche) sur la statusline | `pokagent.exe install-statusline` |
 
 Il faut Claude Code installé et Windows 10 ou 11.
 

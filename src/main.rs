@@ -210,6 +210,9 @@ struct App {
     auto_update: Arc<AtomicBool>,
     usage: Option<usage::Usage>,
     usage_t: f64,
+    uview: Surface,
+    ucanvas: Canvas,
+    uprev: Canvas,
 }
 
 static mut MUTEX: HANDLE = HANDLE(std::ptr::null_mut());
@@ -261,6 +264,15 @@ impl App {
         if t - self.usage_t > 10.0 || self.usage_t == 0.0 {
             self.usage = usage::Usage::load();
             self.usage_t = t.max(0.001);
+            let lines = match &self.usage {
+                Some(u) => u.report(usage::now()),
+                None => vec!["Pas encore de données : icône > Réglages".into(), "> Brancher le calculateur de limites".into()],
+            };
+            usage::draw(&mut self.ucanvas, &lines);
+            if self.ucanvas.px != self.uprev.px {
+                unsafe { self.uview.present(&self.ucanvas, &self.uprev, self.scale) };
+                std::mem::swap(&mut self.ucanvas, &mut self.uprev);
+            }
         }
         let mut tip = self.scene.summary();
         if let Some(u) = &self.usage {
@@ -762,6 +774,25 @@ fn main() {
         )
         .unwrap();
 
+        // Limites d'usage, en bas à gauche : même comportement que la scène.
+        let (uw, uh) = (usage::UW * scale, usage::UH * scale);
+        let uview_hwnd = CreateWindowExW(
+            WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+            w!("PokAgentView"),
+            w!("PokAgent — limites"),
+            WS_POPUP,
+            wa.left,
+            wa.bottom - uh,
+            uw,
+            uh,
+            None,
+            None,
+            hinst,
+            None,
+        )
+        .unwrap();
+        let _ = SetWindowPos(uview_hwnd, HWND_BOTTOM, wa.left, wa.bottom - uh, uw, uh, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+
         // Sous toutes les fenêtres, au-dessus du fond d'écran (voir view_proc).
         let _ = SetWindowPos(view_hwnd, HWND_BOTTOM, wa.left, wa.top, vw, vh, SWP_NOACTIVATE | SWP_SHOWWINDOW);
 
@@ -848,6 +879,9 @@ fn main() {
             auto_update,
             usage: None,
             usage_t: 0.0,
+            uview: Surface::new(uview_hwnd, uw, uh),
+            ucanvas: Canvas::new(usage::UW, usage::UH),
+            uprev: Canvas::new(usage::UW, usage::UH),
             cfg,
         };
         let fps = app.cfg.fps;
@@ -866,6 +900,7 @@ fn main() {
             let _ = Shell_NotifyIconW(NIM_DELETE, &a.tray);
             let _ = DestroyWindow(a.view.hwnd);
             let _ = DestroyWindow(a.popup.hwnd);
+            let _ = DestroyWindow(a.uview.hwnd);
         });
     }
 }
