@@ -1,6 +1,6 @@
 [package]
 name = "pokagent"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "Surcouche de fond d'écran qui montre les sessions et agents Claude Code en pixel art."
 
