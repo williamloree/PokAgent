@@ -12,6 +12,7 @@ mod sound;
 mod sprites;
 mod themes;
 mod updater;
+mod usage;
 mod watcher;
 
 use gfx::Canvas;
@@ -43,6 +44,7 @@ const ID_FPS: usize = 200;
 const FPS: [u32; 3] = [2, 8, 20];
 const ID_SOUND: usize = 300;
 const ID_HOOK: usize = 400;
+const ID_STATUSLINE: usize = 401;
 const ID_AUTOSTART: usize = 500;
 const ID_AUTOUPDATE: usize = 600;
 const ID_CHECK: usize = 601;
@@ -206,6 +208,8 @@ struct App {
     tray: NOTIFYICONDATAW,
     tip: String,
     auto_update: Arc<AtomicBool>,
+    usage: Option<usage::Usage>,
+    usage_t: f64,
 }
 
 static mut MUTEX: HANDLE = HANDLE(std::ptr::null_mut());
@@ -254,7 +258,15 @@ impl App {
                 self.scene.sync(&m, t);
             }
         }
-        let tip = self.scene.summary();
+        if t - self.usage_t > 10.0 || self.usage_t == 0.0 {
+            self.usage = usage::Usage::load();
+            self.usage_t = t.max(0.001);
+        }
+        let mut tip = self.scene.summary();
+        if let Some(u) = &self.usage {
+            tip = format!("{tip}
+{}", u.short(usage::now()));
+        }
         if tip != self.tip {
             self.tray.szTip = [0; 128];
             for (i, c) in tip.encode_utf16().take(127).enumerate() {
@@ -399,6 +411,17 @@ unsafe fn tray_menu(ctl: HWND) {
     let _ = AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, PCWSTR(title.as_ptr()));
     let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
 
+    // Limites d'usage (5 h et semaine), recopiées par la statusline.
+    let lines = match usage::Usage::load() {
+        Some(u) => u.report(usage::now()),
+        None => vec!["Limites d'usage : Réglages → Brancher le calculateur".to_string()],
+    };
+    for l in lines {
+        let t = wide(&l);
+        let _ = AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, PCWSTR(t.as_ptr()));
+    }
+    let _ = AppendMenuW(menu, MF_SEPARATOR, 0, None);
+
     // Qui est qui : une ligne par salle, avec la tête du personnage.
     let mut bitmaps = vec![];
     if roster.is_empty() {
@@ -444,6 +467,7 @@ unsafe fn tray_menu(ctl: HWND) {
     let _ = AppendMenuW(settings, MF_SEPARATOR, 0, None);
     item(settings, ID_SOUND, "Son des questions", snd);
     item(settings, ID_HOOK, "Installer le hook des questions…", false);
+    item(settings, ID_STATUSLINE, "Brancher le calculateur de limites…", false);
     let _ = AppendMenuW(settings, MF_SEPARATOR, 0, None);
     item(settings, ID_AUTOSTART, "Lancer avec Windows", auto);
     item(settings, ID_AUTOUPDATE, "Mises à jour automatiques", upd);
@@ -494,6 +518,17 @@ unsafe fn tray_menu(ctl: HWND) {
                     Err(e) => format!("Échec : {e}"),
                 };
                 message(&msg);
+            }
+        }
+        ID_STATUSLINE => {
+            let ok = MessageBoxW(
+                None,
+                w!("PokAgent va se placer devant la statusline dans %USERPROFILE%\\.claude\\settings.json (copie settings.json.bak avant). Il y lit les % de la session 5 h et de la semaine, puis relaie à ta statusline actuelle, qui reste affichée.\n\nContinuer ?"),
+                w!("PokAgent"),
+                MB_OKCANCEL | MB_ICONQUESTION,
+            );
+            if ok == IDOK {
+                message(&hook::install_statusline().unwrap_or_else(|e| format!("Échec : {e}")));
             }
         }
         ID_AUTOSTART => {
@@ -623,6 +658,11 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("hook") => return hook::run_hook(),
+        Some("statusline") => return usage::run_statusline(),
+        Some("install-statusline") => {
+            message(&hook::install_statusline().unwrap_or_else(|e| format!("Échec : {e}")));
+            return;
+        }
         // Mise à jour à la demande. Code de sortie : 0 installée, 1 déjà à jour, 2 erreur.
         Some("update") => {
             let quiet = args.iter().any(|a| a == "--quiet");
@@ -806,6 +846,8 @@ fn main() {
             tray,
             tip: String::new(),
             auto_update,
+            usage: None,
+            usage_t: 0.0,
             cfg,
         };
         let fps = app.cfg.fps;

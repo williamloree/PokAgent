@@ -81,18 +81,46 @@ fn settings_path() -> PathBuf {
     home.join(".claude").join("settings.json")
 }
 
-/// Ajoute le hook (avec copie de sauvegarde settings.json.bak). Renvoie un message.
-pub fn install_hook() -> Result<String, String> {
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    let command = format!("\"{}\" hook", exe.display());
+/// settings.json lu, après une copie de sauvegarde settings.json.bak.
+fn read_settings() -> Result<(PathBuf, Value), String> {
     let path = settings_path();
-    let mut root: Value = match std::fs::read(&path) {
+    let root = match std::fs::read(&path) {
         Ok(b) => {
             std::fs::write(path.with_extension("json.bak"), &b).map_err(|e| e.to_string())?;
             serde_json::from_slice(&b).map_err(|e| format!("settings.json illisible : {e}"))?
         }
         Err(_) => json!({}),
     };
+    Ok((path, root))
+}
+
+/// Branche `pokagent.exe statusline` devant la statusline actuelle, qui reste affichée.
+pub fn install_statusline() -> Result<String, String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let command = format!("\"{}\" statusline", exe.display());
+    let (path, mut root) = read_settings()?;
+    let obj = root.as_object_mut().ok_or("settings.json n'est pas un objet JSON")?;
+    let sl = obj.entry("statusLine").or_insert_with(|| json!({ "type": "command" }));
+    let sl = sl.as_object_mut().ok_or("« statusLine » n'est pas un objet")?;
+    let old = sl.get("command").and_then(Value::as_str).unwrap_or("").to_string();
+    if old.to_lowercase().contains("pokagent") {
+        return Ok("Le calculateur est déjà branché sur la statusline.".into());
+    }
+    crate::usage::set_next(&old)?;
+    sl.insert("type".into(), json!("command"));
+    sl.insert("command".into(), json!(command));
+    let text = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
+    std::fs::write(&path, text).map_err(|e| e.to_string())?;
+    let kept = if old.is_empty() { String::new() } else { format!("
+Ta statusline « {old} » reste affichée.") };
+    Ok(format!("Calculateur branché dans {}.{kept}\nCopie de l'ancien fichier : settings.json.bak.\nLes pourcentages arrivent à la prochaine réponse de Claude.", path.display()))
+}
+
+/// Ajoute le hook (avec copie de sauvegarde settings.json.bak). Renvoie un message.
+pub fn install_hook() -> Result<String, String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let command = format!("\"{}\" hook", exe.display());
+    let (path, mut root) = read_settings()?;
     let obj = root.as_object_mut().ok_or("settings.json n'est pas un objet JSON")?;
     let hooks = obj.entry("hooks").or_insert_with(|| json!({}));
     let list = hooks
